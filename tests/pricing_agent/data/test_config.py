@@ -2,7 +2,61 @@
 
 import pytest
 
-from pricing_agent.data.config import PricingDataConfig
+from pricing_agent.data.config import PricingDataConfig, SegmentConfig
+
+# Segment Config
+
+
+def test_create_segment_config_with_valid_values() -> None:
+    """Create a segment configuration with valid parameters."""
+    config = SegmentConfig(
+        name="regular",
+        price_coefficient=-2.0,
+        baseline_conversion=0.40,
+    )
+
+    assert config.name == "regular"
+    assert config.price_coefficient == -2.0
+    assert config.baseline_conversion == 0.40
+
+
+@pytest.mark.parametrize("name", ["", " ", "   "])
+def test_reject_empty_segment_name(name: str) -> None:
+    """Reject configurations with empty names."""
+    with pytest.raises(ValueError, match="name must not be empty"):
+        SegmentConfig(
+            name=name,
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+        )
+
+
+@pytest.mark.parametrize("price_coefficient", [0.0, 0.5, 1.0])
+def test_reject_non_negative_price_coefficients(price_coefficient: float) -> None:
+    """Reject configurations with non-negative price coefficient values."""
+    with pytest.raises(ValueError, match="price_coefficient must be negative"):
+        SegmentConfig(
+            name="regular",
+            price_coefficient=price_coefficient,
+            baseline_conversion=0.40,
+        )
+
+
+@pytest.mark.parametrize("baseline_conversion", [0.0, 1.0, -0.01, 1.01])
+def test_reject_out_of_range_baseline_conversion(baseline_conversion: float) -> None:
+    """Reject configurations outside the exclusive zero-to-one range."""
+    with pytest.raises(
+        ValueError,
+        match="baseline_conversion must be greater than 0 and less than 1",
+    ):
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=baseline_conversion,
+        )
+
+
+# Pricing Data Config
 
 
 def test_create_pricing_data_config_with_valid_values() -> None:
