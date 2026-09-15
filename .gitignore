@@ -1,0 +1,11 @@
+# Virtual environment
+.venv/
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+
+# Python bytecode cache
+__pycache__/

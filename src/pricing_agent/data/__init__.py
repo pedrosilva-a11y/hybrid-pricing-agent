@@ -1,0 +1,1 @@
+"""Synthetic pricing data utilities."""
