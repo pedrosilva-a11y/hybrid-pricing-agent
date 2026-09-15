@@ -52,19 +52,23 @@ class PricingDataConfig:
         randomization_rate: Fraction of users assigned to randomized pricing,
             expressed as a value between 0 and 1.
         seed: Random seed used to make data generation reproducible.
+        segments: Customer segment configurations represents in the synthetic
+            population.
     """
 
     n_users: int
     n_weeks: int
     randomization_rate: float
     seed: int
+    segments: tuple[SegmentConfig, ...]
 
     def __post_init__(self) -> None:
         """Validate the pricing configuration values.
 
         Raises:
-            ValueError: If n_users or n_weeks are less than or equal to zero and if
-                randomization_rate is outside the closed interval [0, 1].
+            ValueError: If n_users or n_weeks are less than or equal to zero, if
+                randomization_rate is outside the closed interval [0, 1], if
+                segments is empty, or if segment names are not unique.
         """
         if self.n_users <= 0:
             raise ValueError("n_users must be greater than zero.")
@@ -74,3 +78,11 @@ class PricingDataConfig:
 
         if not 0.0 <= self.randomization_rate <= 1.0:
             raise ValueError("randomization_rate must be between 0 and 1.")
+
+        if not self.segments:
+            raise ValueError("segments must contain at least one segment.")
+
+        segment_names = [segment.name.strip() for segment in self.segments]
+
+        if len(segment_names) != len(set(segment_names)):
+            raise ValueError("segment names must be unique.")

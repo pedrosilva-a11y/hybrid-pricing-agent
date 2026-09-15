@@ -4,6 +4,16 @@ import pytest
 
 from pricing_agent.data.config import PricingDataConfig, SegmentConfig
 
+
+@pytest.fixture
+def segments() -> tuple[SegmentConfig, ...]:
+    """Provide valid customer segment configurations."""
+    return (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+    )
+
+
 # Segment Config
 
 
@@ -59,18 +69,30 @@ def test_reject_out_of_range_baseline_conversion(baseline_conversion: float) -> 
 # Pricing Data Config
 
 
-def test_create_pricing_data_config_with_valid_values() -> None:
+def test_create_pricing_data_config_with_valid_values(
+    segments: tuple[SegmentConfig, ...],
+) -> None:
     """Create a pricing data configuration with valid parameters."""
-    config = PricingDataConfig(n_users=100, n_weeks=4, randomization_rate=0.1, seed=42)
+    config = PricingDataConfig(
+        n_users=100,
+        n_weeks=4,
+        randomization_rate=0.1,
+        seed=42,
+        segments=segments,
+    )
 
     assert config.n_users == 100
     assert config.n_weeks == 4
     assert config.randomization_rate == 0.1
     assert config.seed == 42
+    assert config.segments == segments
 
 
 @pytest.mark.parametrize("n_users", [0, -1])
-def test_reject_non_positive_number_of_users(n_users: int) -> None:
+def test_reject_non_positive_number_of_users(
+    n_users: int,
+    segments: tuple[SegmentConfig, ...],
+) -> None:
     """Reject configurations with zero or negative users."""
     with pytest.raises(ValueError, match="n_users must be greater than zero"):
         PricingDataConfig(
@@ -78,11 +100,15 @@ def test_reject_non_positive_number_of_users(n_users: int) -> None:
             n_weeks=4,
             randomization_rate=0.1,
             seed=42,
+            segments=segments,
         )
 
 
 @pytest.mark.parametrize("n_weeks", [0, -1])
-def test_reject_non_positive_number_of_weeks(n_weeks: int) -> None:
+def test_reject_non_positive_number_of_weeks(
+    n_weeks: int,
+    segments: tuple[SegmentConfig, ...],
+) -> None:
     """Reject configurations with zero or negative simulation weeks."""
     with pytest.raises(ValueError, match="n_weeks must be greater than zero"):
         PricingDataConfig(
@@ -90,12 +116,14 @@ def test_reject_non_positive_number_of_weeks(n_weeks: int) -> None:
             n_weeks=n_weeks,
             randomization_rate=0.1,
             seed=42,
+            segments=segments,
         )
 
 
 @pytest.mark.parametrize("randomization_rate", [0.0, 1.0])
 def test_accept_randomization_rate_at_range_boundaries(
     randomization_rate: float,
+    segments: tuple[SegmentConfig, ...],
 ) -> None:
     """Accept randomization rates at the inclusive range boundaries."""
     config = PricingDataConfig(
@@ -103,6 +131,7 @@ def test_accept_randomization_rate_at_range_boundaries(
         n_weeks=4,
         randomization_rate=randomization_rate,
         seed=42,
+        segments=segments,
     )
 
     assert config.randomization_rate == randomization_rate
@@ -111,6 +140,7 @@ def test_accept_randomization_rate_at_range_boundaries(
 @pytest.mark.parametrize("randomization_rate", [-0.01, 1.01])
 def test_reject_randomization_rate_outside_valid_range(
     randomization_rate: float,
+    segments: tuple[SegmentConfig, ...],
 ) -> None:
     """Reject randomization rates outside the inclusive zero-to-one range."""
     with pytest.raises(ValueError, match="randomization_rate must be between 0 and 1"):
@@ -119,4 +149,57 @@ def test_reject_randomization_rate_outside_valid_range(
             n_weeks=4,
             randomization_rate=randomization_rate,
             seed=42,
+            segments=segments,
+        )
+
+
+def test_reject_empty_segments_collection() -> None:
+    """Reject configurations with an empty segment collection."""
+    with pytest.raises(ValueError, match="segments must contain at least one segment"):
+        PricingDataConfig(
+            n_users=100,
+            n_weeks=4,
+            randomization_rate=0.1,
+            seed=42,
+            segments=(),
+        )
+
+
+def test_reject_non_unique_segment_names() -> None:
+    """Reject configurations with duplicate segment names."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+    )
+
+    with pytest.raises(ValueError, match="segment names must be unique"):
+        PricingDataConfig(
+            n_users=100,
+            n_weeks=4,
+            randomization_rate=0.1,
+            seed=42,
+            segments=segments,
+        )
+
+
+def test_reject_segment_names_with_duplicate_whitespace_variants() -> None:
+    """Reject duplicate segment names that differ only by surrounding whitespace."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+        SegmentConfig(
+            name=" regular ",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="segment names must be unique"):
+        PricingDataConfig(
+            n_users=100,
+            n_weeks=4,
+            randomization_rate=0.1,
+            seed=42,
+            segments=segments,
         )
