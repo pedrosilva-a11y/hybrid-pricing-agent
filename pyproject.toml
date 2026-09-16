@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Hybrid pricing agent combining causal modeling, guarded recommendations and release-gated evaluations."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.6",
+]
 
 [build-system]
 requires = ["hatchling"]
