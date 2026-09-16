@@ -6,6 +6,7 @@ import pytest
 
 from pricing_agent.data.config import PricingDataConfig, SegmentConfig
 from pricing_agent.data.generator import (
+    CONVERSION_PROB_KEY,
     DEMAND_HIGH_BOUND,
     DEMAND_INDEX_KEY,
     DEMAND_LOW_BOUND,
@@ -18,8 +19,11 @@ from pricing_agent.data.generator import (
     SIGNUP_WEEK_KEY,
     USER_ID_KEY,
     WEEK_KEY,
+    AssignedUserPrices,
+    UserPopulation,
     WeeklyDemand,
     assign_user_prices,
+    calculate_conversion_probabilities,
     generate_users,
     generate_weekly_demand,
     generate_weekly_price,
@@ -229,3 +233,177 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
     )
 
     assert assigned_prices_1 == assigned_prices_2
+
+
+# Conversion Probability Calculation
+
+
+def test_calculate_baseline_conversion_probability_under_reference_conditions() -> None:
+    """Return the segment baseline conversion under reference conditions."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+    )
+    config = PricingDataConfig(
+        n_users=1,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0],
+        SIGNUP_WEEK_KEY: [0],
+        SEGMENT_KEY: ["regular"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: [0],
+        OBSERVED_PRICE_KEY: [REFERENCE_PRICE],
+        IS_RANDOMIZED_KEY: [False],
+    }
+
+    weekly_demand: WeeklyDemand = {
+        WEEK_KEY: [0],
+        DEMAND_INDEX_KEY: [DEMAND_MEAN],
+    }
+
+    conversion_probabilities = calculate_conversion_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        weekly_demand=weekly_demand,
+    )
+
+    assert conversion_probabilities[USER_ID_KEY] == [0]
+    assert conversion_probabilities[CONVERSION_PROB_KEY][0] == pytest.approx(0.40)
+
+
+def test_decrease_conversion_probability_as_price_increases() -> None:
+    """Decrease conversion probability as the observed price increases."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+    )
+
+    config = PricingDataConfig(
+        n_users=3,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1, 2],
+        SIGNUP_WEEK_KEY: [0, 0, 0],
+        SEGMENT_KEY: ["regular", "regular", "regular"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: [0, 1, 2],
+        OBSERVED_PRICE_KEY: [
+            round(REFERENCE_PRICE * 0.90, 2),
+            REFERENCE_PRICE,
+            round(REFERENCE_PRICE * 1.10, 2),
+        ],
+        IS_RANDOMIZED_KEY: [False, False, False],
+    }
+
+    weekly_demand: WeeklyDemand = {
+        WEEK_KEY: [0],
+        DEMAND_INDEX_KEY: [DEMAND_MEAN],
+    }
+
+    conversion_probabilities = calculate_conversion_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        weekly_demand=weekly_demand,
+    )
+
+    lower_price_probability, reference_probability, higher_price_probability = (
+        conversion_probabilities[CONVERSION_PROB_KEY]
+    )
+
+    assert lower_price_probability > reference_probability > higher_price_probability
+
+
+def test_increase_conversion_probability_as_demand_increases() -> None:
+    """Increase conversion probability as weekly demand increases."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+    )
+
+    config = PricingDataConfig(
+        n_users=3,
+        n_weeks=3,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1, 2],
+        SIGNUP_WEEK_KEY: [0, 1, 2],
+        SEGMENT_KEY: ["regular", "regular", "regular"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: [0, 1, 2],
+        OBSERVED_PRICE_KEY: [REFERENCE_PRICE, REFERENCE_PRICE, REFERENCE_PRICE],
+        IS_RANDOMIZED_KEY: [False, False, False],
+    }
+
+    weekly_demand: WeeklyDemand = {
+        WEEK_KEY: [0, 1, 2],
+        DEMAND_INDEX_KEY: [
+            round(0.80 * DEMAND_MEAN, 2),
+            DEMAND_MEAN,
+            round(1.20 * DEMAND_MEAN, 2),
+        ],
+    }
+
+    conversion_probabilities = calculate_conversion_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        weekly_demand=weekly_demand,
+    )
+
+    weak_demand_probability, normal_demand_probability, strong_demand_probability = (
+        conversion_probabilities[CONVERSION_PROB_KEY]
+    )
+
+    assert (
+        weak_demand_probability < normal_demand_probability < strong_demand_probability
+    )
+
+
+def test_generate_valid_conversion_probabilities_for_all_users(
+    config: PricingDataConfig,
+) -> None:
+    """Generate a valid conversion probability for each synthetic user."""
+    users_info = generate_users(config)
+    weekly_demand = generate_weekly_demand(config)
+    weekly_price = generate_weekly_price(weekly_demand)
+
+    assigned_prices = assign_user_prices(
+        config=config,
+        generated_users=users_info,
+        weekly_price=weekly_price,
+    )
+
+    conversion_probabilities = calculate_conversion_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        weekly_demand=weekly_demand,
+    )
+
+    assert conversion_probabilities[USER_ID_KEY] == users_info[USER_ID_KEY]
+    assert len(conversion_probabilities[CONVERSION_PROB_KEY]) == config.n_users
+    assert all(
+        0.0 < probability < 1.0
+        for probability in conversion_probabilities[CONVERSION_PROB_KEY]
+    )

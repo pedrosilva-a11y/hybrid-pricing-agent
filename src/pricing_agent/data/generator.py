@@ -32,6 +32,10 @@ EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
 IS_RANDOMIZED_KEY: Final = "is_randomized"
 OBSERVED_PRICE_KEY: Final = "observed_price"
 
+# Conversion Probabilities Global Variables
+DEMAND_CONVERSION_SENSITIVITY: Final = 1.0
+CONVERSION_PROB_KEY: Final = "conversion_probability"
+
 
 class UserPopulation(TypedDict):
     """Column-oriented synthetic user population.
@@ -91,6 +95,19 @@ class AssignedUserPrices(TypedDict):
     user_id: list[int]
     observed_price: list[float]
     is_randomized: list[bool]
+
+
+class ConversionProbabilities(TypedDict):
+    """Column-oriented synthetic user conversion probabilities.
+
+    Attributes:
+        user_id: Unique user identifier.
+        conversion_probability: Probability that the user converts under the
+            assigned price and weekly demand conditions.
+    """
+
+    user_id: list[int]
+    conversion_probability: list[float]
 
 
 def generate_users(config: PricingDataConfig) -> UserPopulation:
@@ -211,4 +228,50 @@ def assign_user_prices(
         USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
         OBSERVED_PRICE_KEY: observed_prices,
         IS_RANDOMIZED_KEY: is_randomized,
+    }
+
+
+def calculate_conversion_probabilities(
+    config: PricingDataConfig,
+    generated_users: UserPopulation,
+    user_pricing: AssignedUserPrices,
+    weekly_demand: WeeklyDemand,
+) -> ConversionProbabilities:
+    """Calculate the conversion probability per user.
+
+    Args:
+        config: Generation configuration containing customer segment parameters.
+        generated_users: Synthetic user population containing signup weeks.
+        user_pricing: User-level observed pricing assignments.
+        weekly_demand: Weekly market demand conditions used by the pricing policy.
+
+    Returns:
+        Probability of each user being converted.
+    """
+    segment_lookup = {segment.name.strip(): segment for segment in config.segments}
+
+    probabilities: list[float] = []
+
+    for index in range(len(generated_users[USER_ID_KEY])):
+        user_segment = generated_users[SEGMENT_KEY][index]
+        segment = segment_lookup[user_segment]
+
+        baseline_conversion = segment.baseline_conversion
+        price_coefficient = segment.price_coefficient
+
+        observed_price = user_pricing[OBSERVED_PRICE_KEY][index]
+        signup_week = generated_users[SIGNUP_WEEK_KEY][index]
+        demand_index = weekly_demand[DEMAND_INDEX_KEY][signup_week]
+
+        log_odds = math.log(baseline_conversion / (1 - baseline_conversion))
+        price_effect = price_coefficient * math.log(observed_price / REFERENCE_PRICE)
+        demand_effect = DEMAND_CONVERSION_SENSITIVITY * (demand_index - DEMAND_MEAN)
+        logits = log_odds + price_effect + demand_effect
+        conversion_probability = 1 / (1 + math.exp(-logits))
+
+        probabilities.append(conversion_probability)
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        CONVERSION_PROB_KEY: probabilities,
     }
