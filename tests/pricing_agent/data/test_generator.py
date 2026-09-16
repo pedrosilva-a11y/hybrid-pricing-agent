@@ -6,6 +6,7 @@ import pytest
 
 from pricing_agent.data.config import PricingDataConfig, SegmentConfig
 from pricing_agent.data.generator import (
+    CONVERSION_OUTCOME_KEY,
     CONVERSION_PROB_KEY,
     DEMAND_HIGH_BOUND,
     DEMAND_INDEX_KEY,
@@ -20,6 +21,7 @@ from pricing_agent.data.generator import (
     USER_ID_KEY,
     WEEK_KEY,
     AssignedUserPrices,
+    ConversionProbabilities,
     UserPopulation,
     WeeklyDemand,
     assign_user_prices,
@@ -27,6 +29,7 @@ from pricing_agent.data.generator import (
     generate_users,
     generate_weekly_demand,
     generate_weekly_price,
+    sample_conversions,
 )
 
 
@@ -407,3 +410,101 @@ def test_generate_valid_conversion_probabilities_for_all_users(
         0.0 < probability < 1.0
         for probability in conversion_probabilities[CONVERSION_PROB_KEY]
     )
+
+
+# Conversion Outcomes
+
+
+def test_sample_deterministic_conversion_outcomes_at_probability_boundaries() -> None:
+    """Sample deterministic outcomes for zero and one conversion probabilities."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+    )
+    config = PricingDataConfig(
+        n_users=4,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+    conversion_probabilities: ConversionProbabilities = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        CONVERSION_PROB_KEY: [1.0, 0.0, 0.0, 1.0],
+    }
+
+    sampled_conversions = sample_conversions(
+        config=config,
+        conversion_probabilities=conversion_probabilities,
+    )
+
+    assert sampled_conversions[USER_ID_KEY] == conversion_probabilities[USER_ID_KEY]
+    assert sampled_conversions[CONVERSION_OUTCOME_KEY] == [True, False, False, True]
+
+
+def test_preserve_users_when_sampling_conversion_outcomes() -> None:
+    """Preserve user identifiers and generate one outcome per probability."""
+    segments = (
+        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+    )
+
+    config = PricingDataConfig(
+        n_users=5,
+        n_weeks=4,
+        randomization_rate=0.1,
+        seed=42,
+        segments=segments,
+    )
+
+    conversion_probabilities: ConversionProbabilities = {
+        USER_ID_KEY: list(range(5)),
+        CONVERSION_PROB_KEY: [0.05, 0.15, 0.25, 0.35, 0.45],
+    }
+
+    sampled_conversions = sample_conversions(
+        config=config,
+        conversion_probabilities=conversion_probabilities,
+    )
+
+    assert len(sampled_conversions[USER_ID_KEY]) == config.n_users
+    assert len(sampled_conversions[CONVERSION_OUTCOME_KEY]) == config.n_users
+    assert sampled_conversions[USER_ID_KEY] == conversion_probabilities[USER_ID_KEY]
+    assert all(
+        isinstance(outcome, bool)
+        for outcome in sampled_conversions[CONVERSION_OUTCOME_KEY]
+    )
+
+
+def test_reproduce_identical_conversion_outcomes_with_same_seed() -> None:
+    """Reproduce identical conversion outcomes when using the same seed."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=5,
+        n_weeks=4,
+        randomization_rate=0.1,
+        seed=42,
+        segments=segments,
+    )
+
+    conversion_probabilities: ConversionProbabilities = {
+        USER_ID_KEY: list(range(5)),
+        CONVERSION_PROB_KEY: [0.10, 0.30, 0.50, 0.70, 0.90],
+    }
+
+    sampled_conversions_1 = sample_conversions(
+        config=config,
+        conversion_probabilities=conversion_probabilities,
+    )
+
+    sampled_conversions_2 = sample_conversions(
+        config=config,
+        conversion_probabilities=conversion_probabilities,
+    )
+
+    assert sampled_conversions_1 == sampled_conversions_2

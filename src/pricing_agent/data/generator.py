@@ -5,8 +5,15 @@ import random
 from typing import Final, TypedDict
 
 import numpy as np
+from numpy.random import SeedSequence
 
 from pricing_agent.data.config import PricingDataConfig
+
+# Random Stream Identifiers
+USER_GENERATION_STREAM: Final = 0
+WEEKLY_DEMAND_STREAM: Final = 1
+PRICE_ASSIGNMENT_STREAM: Final = 2
+CONVERSION_OUTCOME_STREAM: Final = 3
 
 # User Population Global Variables
 SEGMENT_KEY: Final = "segment"
@@ -35,6 +42,9 @@ OBSERVED_PRICE_KEY: Final = "observed_price"
 # Conversion Probabilities Global Variables
 DEMAND_CONVERSION_SENSITIVITY: Final = 1.0
 CONVERSION_PROB_KEY: Final = "conversion_probability"
+
+# Conversion Outcome Global Variables
+CONVERSION_OUTCOME_KEY: Final = "conversion_outcome"
 
 
 class UserPopulation(TypedDict):
@@ -110,6 +120,25 @@ class ConversionProbabilities(TypedDict):
     conversion_probability: list[float]
 
 
+class ConversionOutcomes(TypedDict):
+    """Column-oriented synthetic user conversion outcomes.
+
+    Attributes:
+        user_id: Unique user identifier.
+        conversion_outcome: Whether the user converted after receiving the assigned
+            price under the simulated market conditions.
+    """
+
+    user_id: list[int]
+    conversion_outcome: list[bool]
+
+
+def derive_seed(master_seed: int, stream: int) -> int:
+    """Derive a deterministic seed for an independent random stream."""
+    seed_sequence = SeedSequence([master_seed, stream])
+    return int(seed_sequence.generate_state(1)[0])
+
+
 def generate_users(config: PricingDataConfig) -> UserPopulation:
     """Generate the synthetic user population.
 
@@ -119,7 +148,8 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
     Returns:
         Mapping of user attributes to their generated column values.
     """
-    rng = random.Random(config.seed)
+    rng = random.Random(derive_seed(config.seed, USER_GENERATION_STREAM))
+
     synthetic_data: UserPopulation = {
         USER_ID_KEY: [],
         SIGNUP_WEEK_KEY: [],
@@ -147,7 +177,8 @@ def generate_weekly_demand(config: PricingDataConfig) -> WeeklyDemand:
         Column-oriented weekly demand data containing one demand index per week.
     """
     n_weeks = config.n_weeks
-    rng = np.random.default_rng(seed=config.seed)
+
+    rng = np.random.default_rng(derive_seed(config.seed, WEEKLY_DEMAND_STREAM))
 
     raw_demand = rng.normal(loc=DEMAND_MEAN, scale=DEMAND_STD_DEV, size=n_weeks)
 
@@ -204,7 +235,7 @@ def assign_user_prices(
     n_users = len(generated_users[USER_ID_KEY])
     n_randomized = math.ceil(config.randomization_rate * n_users)
 
-    rng = random.Random(config.seed)
+    rng = random.Random(derive_seed(config.seed, PRICE_ASSIGNMENT_STREAM))
 
     randomized_indices = set(rng.sample(range(n_users), k=n_randomized))
 
@@ -274,4 +305,32 @@ def calculate_conversion_probabilities(
     return {
         USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
         CONVERSION_PROB_KEY: probabilities,
+    }
+
+
+def sample_conversions(
+    config: PricingDataConfig,
+    conversion_probabilities: ConversionProbabilities,
+) -> ConversionOutcomes:
+    """Sample conversion outcomes from user conversion probabilities.
+
+    Args:
+        config: Generation configuration containing the random seed.
+        conversion_probabilities: User-level probabilities of conversion.
+
+    Returns:
+        Column-oriented user conversion outcomes indicating whether each user
+        converted.
+    """
+    prob_array = np.array(conversion_probabilities[CONVERSION_PROB_KEY])
+
+    rng = np.random.default_rng(derive_seed(config.seed, CONVERSION_OUTCOME_STREAM))
+
+    random_draws = rng.random(size=prob_array.shape)
+
+    conversion_array = random_draws < prob_array
+
+    return {
+        USER_ID_KEY: conversion_probabilities[USER_ID_KEY].copy(),
+        CONVERSION_OUTCOME_KEY: conversion_array.tolist(),
     }
