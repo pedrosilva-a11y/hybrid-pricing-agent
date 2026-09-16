@@ -1,5 +1,6 @@
 """Synthetic pricing data generation."""
 
+import math
 import random
 from typing import Final, TypedDict
 
@@ -20,6 +21,16 @@ DEMAND_MEAN: Final = 1.0
 # Generates a moderate spread (~99.7% of values fall between 0.76 and 1.24)
 DEMAND_STD_DEV: Final = 0.08
 WEEK_KEY: Final = "week"
+
+# Weekly Price Global Variables
+PRICE_DEMAND_SENSITIVITY: Final = 0.4
+PRICE_KEY: Final = "price"
+REFERENCE_PRICE: Final = 19.99
+
+# Assign User Prices Global Variables
+EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
+IS_RANDOMIZED_KEY: Final = "is_randomized"
+OBSERVED_PRICE_KEY: Final = "observed_price"
 
 
 class UserPopulation(TypedDict):
@@ -50,6 +61,36 @@ class WeeklyDemand(TypedDict):
 
     week: list[int]
     demand_index: list[float]
+
+
+class WeeklyPrice(TypedDict):
+    """Column-oriented synthetic weekly pricing data.
+
+    Attributes:
+        week: Unique week index in the simulated period.
+        price: Policy price offered during the week, derived from the reference price
+            and the week's demand condition.
+    """
+
+    week: list[int]
+    price: list[float]
+
+
+class AssignedUserPrices(TypedDict):
+    """Column-oriented synthetic user price assignments.
+
+    Attributes:
+        user_id: Unique user identifier.
+        observed_price: Price assigned to the user. For non-randomized users, this
+            matches the policy price for the user's signup week. For randomized users,
+            this is assigned independently of the weekly pricing policy.
+        is_randomized: Whether the user's observed price was assigned through the
+            randomized pricing experiment.
+    """
+
+    user_id: list[int]
+    observed_price: list[float]
+    is_randomized: list[bool]
 
 
 def generate_users(config: PricingDataConfig) -> UserPopulation:
@@ -98,4 +139,76 @@ def generate_weekly_demand(config: PricingDataConfig) -> WeeklyDemand:
     return {
         WEEK_KEY: list(range(n_weeks)),
         DEMAND_INDEX_KEY: simulated_demand.tolist(),
+    }
+
+
+def generate_weekly_price(
+    weekly_demand: WeeklyDemand,
+) -> WeeklyPrice:
+    """Generate weekly policy prices from market demand conditions.
+
+    Args:
+        weekly_demand: Weekly market demand conditions used by the pricing policy.
+
+    Returns:
+        Column-oriented weekly pricing data containing one policy price per week.
+    """
+    prices = [
+        round(
+            REFERENCE_PRICE
+            * (1.0 + PRICE_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)),
+            2,
+        )
+        for demand_index in weekly_demand[DEMAND_INDEX_KEY]
+    ]
+
+    return {
+        WEEK_KEY: weekly_demand[WEEK_KEY].copy(),
+        PRICE_KEY: prices,
+    }
+
+
+def assign_user_prices(
+    config: PricingDataConfig,
+    generated_users: UserPopulation,
+    weekly_price: WeeklyPrice,
+) -> AssignedUserPrices:
+    """Assign observed prices to synthetic users.
+
+    Args:
+        config: Generation configuration defining randomization rate and seed.
+        generated_users: Synthetic user population containing signup weeks.
+        weekly_price: Weekly pricing data containing one policy price per week.
+
+    Returns:
+        Column-oriented user pricing data containing each user's observed price and
+        whether the price was assigned through randomization.
+    """
+    n_users = len(generated_users[USER_ID_KEY])
+    n_randomized = math.ceil(config.randomization_rate * n_users)
+
+    rng = random.Random(config.seed)
+
+    randomized_indices = set(rng.sample(range(n_users), k=n_randomized))
+
+    observed_prices: list[float] = []
+    is_randomized: list[bool] = []
+
+    for index in range(n_users):
+        if index in randomized_indices:
+            price_multiplier = rng.choice(EXPERIMENTAL_PRICE_MULTIPLIERS)
+            observed_price = round(REFERENCE_PRICE * price_multiplier, 2)
+            randomized = True
+        else:
+            signup_week = generated_users[SIGNUP_WEEK_KEY][index]
+            observed_price = weekly_price[PRICE_KEY][signup_week]
+            randomized = False
+
+        observed_prices.append(observed_price)
+        is_randomized.append(randomized)
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        OBSERVED_PRICE_KEY: observed_prices,
+        IS_RANDOMIZED_KEY: is_randomized,
     }
