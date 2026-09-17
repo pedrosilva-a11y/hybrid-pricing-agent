@@ -16,6 +16,8 @@ PRICE_ASSIGNMENT_STREAM: Final = 2
 CONVERSION_OUTCOME_STREAM: Final = 3
 
 # User Population Global Variables
+ALLOWED_ACQUISITION_CHANNELS: Final = ("organic", "paid_search", "affiliate")
+CHANNEL_KEY: Final = "channel"
 SEGMENT_KEY: Final = "segment"
 SIGNUP_WEEK_KEY: Final = "signup_week"
 USER_ID_KEY: Final = "user_id"
@@ -43,8 +45,16 @@ OBSERVED_PRICE_KEY: Final = "observed_price"
 DEMAND_CONVERSION_SENSITIVITY: Final = 1.0
 CONVERSION_PROB_KEY: Final = "conversion_probability"
 
-# Conversion Outcome Global Variables
+# Conversion Outcome Global Variable
 CONVERSION_OUTCOME_KEY: Final = "conversion_outcome"
+
+# Acquisition Cost Mapping Global Variable
+ACQUISITION_COST_KEY: Final = "acquisition_cost"
+ACQ_COST_MAPPING: Final = {
+    "organic": 3.00,
+    "affiliate": 10.00,
+    "paid_search": 20.00,
+}
 
 
 class UserPopulation(TypedDict):
@@ -54,11 +64,13 @@ class UserPopulation(TypedDict):
         user_id: Unique user identifier.
         signup_week: Week the user enters the simulated population.
         segment: Customer segment assigned to the user.
+        channel: Acquisition channel through which the user was acquired.
     """
 
     user_id: list[int]
     signup_week: list[int]
     segment: list[str]
+    channel: list[str]
 
 
 class WeeklyDemand(TypedDict):
@@ -133,6 +145,18 @@ class ConversionOutcomes(TypedDict):
     conversion_outcome: list[bool]
 
 
+class UserAcquisitionCosts(TypedDict):
+    """Column-oriented synthetic user acquisition costs.
+
+    Attributes:
+        user_id: Unique user identifier.
+        acquisition_cost: Cost incurred to acquire the user.
+    """
+
+    user_id: list[int]
+    acquisition_cost: list[float]
+
+
 def derive_seed(master_seed: int, stream: int) -> int:
     """Derive a deterministic seed for an independent random stream."""
     seed_sequence = SeedSequence([master_seed, stream])
@@ -154,6 +178,7 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
         USER_ID_KEY: [],
         SIGNUP_WEEK_KEY: [],
         SEGMENT_KEY: [],
+        CHANNEL_KEY: [],
     }
 
     segment_names = [segment.name.strip() for segment in config.segments]
@@ -162,6 +187,7 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
         synthetic_data[USER_ID_KEY].append(user_id)
         synthetic_data[SIGNUP_WEEK_KEY].append(rng.randrange(config.n_weeks))
         synthetic_data[SEGMENT_KEY].append(rng.choice(segment_names))
+        synthetic_data[CHANNEL_KEY].append(rng.choice(ALLOWED_ACQUISITION_CHANNELS))
 
     return synthetic_data
 
@@ -333,4 +359,26 @@ def sample_conversions(
     return {
         USER_ID_KEY: conversion_probabilities[USER_ID_KEY].copy(),
         CONVERSION_OUTCOME_KEY: conversion_array.tolist(),
+    }
+
+
+def assign_acquisition_costs(generated_users: UserPopulation) -> UserAcquisitionCosts:
+    """Map each user's acquisition channel to an acquisition cost.
+
+    Args:
+        generated_users: Synthetic user population containing acquisition channels.
+
+    Returns:
+        Column-oriented user acquisition cost with one cost per user.
+    """
+    acquisition_costs: list[float] = []
+
+    for index in range(len(generated_users[USER_ID_KEY])):
+        user_channel = generated_users[CHANNEL_KEY][index]
+        user_acquisition_cost = ACQ_COST_MAPPING[user_channel]
+        acquisition_costs.append(user_acquisition_cost)
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        ACQUISITION_COST_KEY: acquisition_costs,
     }

@@ -6,6 +6,10 @@ import pytest
 
 from pricing_agent.data.config import PricingDataConfig, SegmentConfig
 from pricing_agent.data.generator import (
+    ACQ_COST_MAPPING,
+    ACQUISITION_COST_KEY,
+    ALLOWED_ACQUISITION_CHANNELS,
+    CHANNEL_KEY,
     CONVERSION_OUTCOME_KEY,
     CONVERSION_PROB_KEY,
     DEMAND_HIGH_BOUND,
@@ -24,6 +28,7 @@ from pricing_agent.data.generator import (
     ConversionProbabilities,
     UserPopulation,
     WeeklyDemand,
+    assign_acquisition_costs,
     assign_user_prices,
     calculate_conversion_probabilities,
     generate_users,
@@ -76,6 +81,8 @@ def test_generate_users_information(
         0 <= signup_week < n_weeks for signup_week in users_info[SIGNUP_WEEK_KEY]
     )
     assert generated_segments <= configured_segments
+    assert len(users_info[CHANNEL_KEY]) == n_users
+    assert set(users_info[CHANNEL_KEY]) <= set(ALLOWED_ACQUISITION_CHANNELS)
 
 
 def test_reproduce_identical_users_with_same_seed(
@@ -259,6 +266,7 @@ def test_calculate_baseline_conversion_probability_under_reference_conditions() 
         USER_ID_KEY: [0],
         SIGNUP_WEEK_KEY: [0],
         SEGMENT_KEY: ["regular"],
+        CHANNEL_KEY: ["organic"],
     }
 
     assigned_prices: AssignedUserPrices = {
@@ -301,6 +309,7 @@ def test_decrease_conversion_probability_as_price_increases() -> None:
         USER_ID_KEY: [0, 1, 2],
         SIGNUP_WEEK_KEY: [0, 0, 0],
         SEGMENT_KEY: ["regular", "regular", "regular"],
+        CHANNEL_KEY: ["organic", "organic", "organic"],
     }
 
     assigned_prices: AssignedUserPrices = {
@@ -350,6 +359,7 @@ def test_increase_conversion_probability_as_demand_increases() -> None:
         USER_ID_KEY: [0, 1, 2],
         SIGNUP_WEEK_KEY: [0, 1, 2],
         SEGMENT_KEY: ["regular", "regular", "regular"],
+        CHANNEL_KEY: ["organic", "organic", "organic"],
     }
 
     assigned_prices: AssignedUserPrices = {
@@ -508,3 +518,42 @@ def test_reproduce_identical_conversion_outcomes_with_same_seed() -> None:
     )
 
     assert sampled_conversions_1 == sampled_conversions_2
+
+
+# Acquisition Costs
+
+
+def test_assign_expected_acquisition_costs_from_channels() -> None:
+    """Assign the expected acquisition cost for each known acquisition channel."""
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1, 2],
+        SIGNUP_WEEK_KEY: [0, 1, 2],
+        SEGMENT_KEY: ["regular", "regular", "regular"],
+        CHANNEL_KEY: ["organic", "affiliate", "paid_search"],
+    }
+
+    acquisition_costs = assign_acquisition_costs(users_info)
+
+    assert acquisition_costs[USER_ID_KEY] == users_info[USER_ID_KEY]
+    for index, channel in enumerate(users_info[CHANNEL_KEY]):
+        mapped_cost = ACQ_COST_MAPPING[channel]
+        assert mapped_cost == acquisition_costs[ACQUISITION_COST_KEY][index]
+
+
+def test_preserve_users_when_assigning_acquisition_costs() -> None:
+    """Preserve user identifiers and assign one acquisition cost per user."""
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        SIGNUP_WEEK_KEY: [0, 1, 2, 3],
+        SEGMENT_KEY: ["regular", "regular", "premium", "premium"],
+        CHANNEL_KEY: ["organic", "affiliate", "paid_search", "organic"],
+    }
+
+    acquisition_costs = assign_acquisition_costs(users_info)
+
+    assert acquisition_costs[USER_ID_KEY] == users_info[USER_ID_KEY]
+    assert len(acquisition_costs[ACQUISITION_COST_KEY]) == len(users_info[USER_ID_KEY])
+    assert all(
+        acquisition_cost >= 0
+        for acquisition_cost in acquisition_costs[ACQUISITION_COST_KEY]
+    )
