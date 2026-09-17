@@ -60,7 +60,7 @@ class PricingDataConfig:
         randomization_rate: Fraction of users assigned to randomized pricing,
             expressed as a value between 0 and 1.
         seed: Random seed used to make data generation reproducible.
-        segments: Customer segment configurations represents in the synthetic
+        segments: Customer segment configurations represented in the synthetic
             population.
     """
 
