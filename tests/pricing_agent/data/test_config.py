@@ -9,8 +9,18 @@ from pricing_agent.data.config import PricingDataConfig, SegmentConfig
 def segments() -> tuple[SegmentConfig, ...]:
     """Provide valid customer segment configurations."""
     return (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
-        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
     )
 
 
@@ -23,11 +33,13 @@ def test_create_segment_config_with_valid_values() -> None:
         name="regular",
         price_coefficient=-2.0,
         baseline_conversion=0.40,
+        baseline_churn=0.20,
     )
 
     assert config.name == "regular"
     assert config.price_coefficient == -2.0
     assert config.baseline_conversion == 0.40
+    assert config.baseline_churn == 0.20
 
 
 @pytest.mark.parametrize("name", ["", " ", "   "])
@@ -38,6 +50,7 @@ def test_reject_empty_segment_name(name: str) -> None:
             name=name,
             price_coefficient=-2.0,
             baseline_conversion=0.40,
+            baseline_churn=0.20,
         )
 
 
@@ -49,6 +62,7 @@ def test_reject_non_negative_price_coefficients(price_coefficient: float) -> Non
             name="regular",
             price_coefficient=price_coefficient,
             baseline_conversion=0.40,
+            baseline_churn=0.20,
         )
 
 
@@ -63,6 +77,22 @@ def test_reject_out_of_range_baseline_conversion(baseline_conversion: float) -> 
             name="regular",
             price_coefficient=-2.0,
             baseline_conversion=baseline_conversion,
+            baseline_churn=0.20,
+        )
+
+
+@pytest.mark.parametrize("baseline_churn", [0.0, 1.0, -0.01, 1.01])
+def test_reject_out_of_range_baseline_churn(baseline_churn: float) -> None:
+    """Reject configurations outside the exclusive zero-to-one range."""
+    with pytest.raises(
+        ValueError,
+        match="baseline_churn must be greater than 0 and less than 1",
+    ):
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=baseline_churn,
         )
 
 
@@ -168,9 +198,24 @@ def test_reject_empty_segments_collection() -> None:
 def test_reject_non_unique_segment_names() -> None:
     """Reject configurations with duplicate segment names."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
-        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
     )
 
     with pytest.raises(ValueError, match="segment names must be unique"):
@@ -186,12 +231,23 @@ def test_reject_non_unique_segment_names() -> None:
 def test_reject_segment_names_with_duplicate_whitespace_variants() -> None:
     """Reject duplicate segment names that differ only by surrounding whitespace."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
-        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
         SegmentConfig(
             name=" regular ",
             price_coefficient=-2.0,
             baseline_conversion=0.40,
+            baseline_churn=0.20,
         ),
     )
 

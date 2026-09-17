@@ -17,18 +17,23 @@ class SegmentConfig:
             reference conditions, before applying price, demand, channel, or simulated
             effects. For example, 0.40 represents a 40% baseline probability of
             conversion.
+        baseline_churn: Probability that a converted user in the segment churns under
+            reference pricing and subscription conditions. For example, 0.20 represents
+            a 20% baseline probability of churn.
     """
 
     name: str
     price_coefficient: float
     baseline_conversion: float
+    baseline_churn: float
 
     def __post_init__(self) -> None:
         """Validate the customer segment configuration.
 
         Raises:
             ValueError: If name is empty, price_coefficient is greater than or equal
-                to zero, or baseline_conversion is outside the open interval (0, 1).
+                to zero, baseline_conversion is outside the open interval (0, 1),
+                or baseline_churn is outside the open interval (0, 1).
         """
         if not self.name.strip():
             raise ValueError("name must not be empty.")
@@ -40,6 +45,9 @@ class SegmentConfig:
             raise ValueError(
                 "baseline_conversion must be greater than 0 and less than 1.",
             )
+
+        if not 0.0 < self.baseline_churn < 1.0:
+            raise ValueError("baseline_churn must be greater than 0 and less than 1.")
 
 
 @dataclass(frozen=True, slots=True)

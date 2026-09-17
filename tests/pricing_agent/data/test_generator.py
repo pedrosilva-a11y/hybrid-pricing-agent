@@ -11,6 +11,8 @@ from pricing_agent.data.generator import (
     ALLOWED_ACQUISITION_CHANNELS,
     ALLOWED_SUBSCRIPTION_TIERS,
     CHANNEL_KEY,
+    CHURN_OUTCOME_KEY,
+    CHURN_PROB_KEY,
     CONVERSION_OUTCOME_KEY,
     CONVERSION_PROB_KEY,
     DEMAND_HIGH_BOUND,
@@ -29,16 +31,20 @@ from pricing_agent.data.generator import (
     USER_ID_KEY,
     WEEK_KEY,
     AssignedUserPrices,
+    ChurnProbabilities,
+    ConversionOutcomes,
     ConversionProbabilities,
     UserPopulation,
     WeeklyDemand,
     assign_acquisition_costs,
     assign_marginal_costs,
     assign_user_prices,
+    calculate_churn_probabilities,
     calculate_conversion_probabilities,
     generate_users,
     generate_weekly_demand,
     generate_weekly_price,
+    sample_churn_outcomes,
     sample_conversions,
 )
 
@@ -47,8 +53,18 @@ from pricing_agent.data.generator import (
 def segments() -> tuple[SegmentConfig, ...]:
     """Provide valid customer segment configurations."""
     return (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
-        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
     )
 
 
@@ -258,8 +274,18 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
 def test_calculate_baseline_conversion_probability_under_reference_conditions() -> None:
     """Return the segment baseline conversion under reference conditions."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
-        SegmentConfig(name="premium", price_coefficient=-0.8, baseline_conversion=0.55),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
     )
     config = PricingDataConfig(
         n_users=1,
@@ -302,7 +328,12 @@ def test_calculate_baseline_conversion_probability_under_reference_conditions() 
 def test_decrease_conversion_probability_as_price_increases() -> None:
     """Decrease conversion probability as the observed price increases."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
     )
 
     config = PricingDataConfig(
@@ -353,7 +384,12 @@ def test_decrease_conversion_probability_as_price_increases() -> None:
 def test_increase_conversion_probability_as_demand_increases() -> None:
     """Increase conversion probability as weekly demand increases."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
     )
 
     config = PricingDataConfig(
@@ -438,7 +474,12 @@ def test_generate_valid_conversion_probabilities_for_all_users(
 def test_sample_deterministic_conversion_outcomes_at_probability_boundaries() -> None:
     """Sample deterministic outcomes for zero and one conversion probabilities."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
     )
     config = PricingDataConfig(
         n_users=4,
@@ -464,7 +505,12 @@ def test_sample_deterministic_conversion_outcomes_at_probability_boundaries() ->
 def test_preserve_users_when_sampling_conversion_outcomes() -> None:
     """Preserve user identifiers and generate one outcome per probability."""
     segments = (
-        SegmentConfig(name="regular", price_coefficient=-2.0, baseline_conversion=0.40),
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
     )
 
     config = PricingDataConfig(
@@ -501,6 +547,7 @@ def test_reproduce_identical_conversion_outcomes_with_same_seed() -> None:
             name="regular",
             price_coefficient=-2.0,
             baseline_conversion=0.40,
+            baseline_churn=0.20,
         ),
     )
 
@@ -609,3 +656,385 @@ def test_preserve_users_when_assigning_marginal_costs() -> None:
     assert all(
         marginal_cost >= 0 for marginal_cost in marginal_costs[MARGINAL_COST_KEY]
     )
+
+
+# Churn Probability Calculation
+
+
+def test_calculate_baseline_churn_probability_under_reference_conditions() -> None:
+    """Return baseline churn under reference price and basic tier conditions."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=1,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0],
+        SIGNUP_WEEK_KEY: [0],
+        SEGMENT_KEY: ["regular"],
+        CHANNEL_KEY: ["organic"],
+        TIER_KEY: ["basic"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: [0],
+        OBSERVED_PRICE_KEY: [REFERENCE_PRICE],
+        IS_RANDOMIZED_KEY: [False],
+    }
+
+    conversion_outcomes: ConversionOutcomes = {
+        USER_ID_KEY: [0],
+        CONVERSION_OUTCOME_KEY: [True],
+    }
+
+    churn_probabilities = calculate_churn_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        conversion_outcomes=conversion_outcomes,
+    )
+
+    assert churn_probabilities[USER_ID_KEY] == [0]
+    assert churn_probabilities[CHURN_PROB_KEY][0] == pytest.approx(0.20)
+
+
+def test_increase_churn_probability_as_price_increases() -> None:
+    """Increase churn probability as the observed price increases."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=3,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    user_ids = [0, 1, 2]
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: user_ids,
+        SIGNUP_WEEK_KEY: [0, 0, 0],
+        SEGMENT_KEY: ["regular", "regular", "regular"],
+        CHANNEL_KEY: ["organic", "organic", "organic"],
+        TIER_KEY: ["basic", "basic", "basic"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: user_ids,
+        OBSERVED_PRICE_KEY: [
+            round(REFERENCE_PRICE * 0.90, 2),
+            REFERENCE_PRICE,
+            round(REFERENCE_PRICE * 1.20, 2),
+        ],
+        IS_RANDOMIZED_KEY: [False, False, False],
+    }
+
+    conversion_outcomes: ConversionOutcomes = {
+        USER_ID_KEY: user_ids,
+        CONVERSION_OUTCOME_KEY: [True, True, True],
+    }
+
+    churn_probabilities = calculate_churn_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        conversion_outcomes=conversion_outcomes,
+    )
+
+    lower_price_probability, reference_probability, higher_price_probability = (
+        churn_probabilities[CHURN_PROB_KEY]
+    )
+
+    assert lower_price_probability < reference_probability < higher_price_probability
+
+
+def test_decrease_churn_probability_for_premium_tier() -> None:
+    """Decrease churn probability for the premium subscription tier."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=2,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    user_ids = [0, 1]
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: user_ids,
+        SIGNUP_WEEK_KEY: [0, 0],
+        SEGMENT_KEY: ["regular", "regular"],
+        CHANNEL_KEY: ["organic", "organic"],
+        TIER_KEY: ["basic", "premium"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: user_ids,
+        OBSERVED_PRICE_KEY: [REFERENCE_PRICE, REFERENCE_PRICE],
+        IS_RANDOMIZED_KEY: [False, False],
+    }
+
+    conversion_outcomes: ConversionOutcomes = {
+        USER_ID_KEY: user_ids,
+        CONVERSION_OUTCOME_KEY: [True, True],
+    }
+
+    churn_probabilities = calculate_churn_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        conversion_outcomes=conversion_outcomes,
+    )
+
+    basic_probability, premium_probability = churn_probabilities[CHURN_PROB_KEY]
+
+    assert premium_probability < basic_probability
+
+
+def test_return_zero_churn_probability_for_non_converted_users() -> None:
+    """Return zero churn probability for users who did not convert."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=1,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    user_id = [0]
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: user_id,
+        SIGNUP_WEEK_KEY: [0],
+        SEGMENT_KEY: ["regular"],
+        CHANNEL_KEY: ["organic"],
+        TIER_KEY: ["premium"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: user_id,
+        OBSERVED_PRICE_KEY: [round(REFERENCE_PRICE * 1.10, 2)],
+        IS_RANDOMIZED_KEY: [False],
+    }
+
+    conversion_outcomes: ConversionOutcomes = {
+        USER_ID_KEY: user_id,
+        CONVERSION_OUTCOME_KEY: [False],
+    }
+
+    churn_probabilities = calculate_churn_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        conversion_outcomes=conversion_outcomes,
+    )
+
+    assert churn_probabilities[USER_ID_KEY] == user_id
+    assert churn_probabilities[CHURN_PROB_KEY] == [0.0]
+
+
+def test_generate_valid_churn_probabilities_for_all_users() -> None:
+    """Generate a valid churn probability for every synthetic user."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=4,
+        n_weeks=2,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        SIGNUP_WEEK_KEY: [0, 0, 1, 1],
+        SEGMENT_KEY: ["regular", "premium", "regular", "premium"],
+        CHANNEL_KEY: ["organic", "affiliate", "paid_search", "organic"],
+        TIER_KEY: ["basic", "premium", "premium", "basic"],
+    }
+
+    assigned_prices: AssignedUserPrices = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        OBSERVED_PRICE_KEY: [
+            REFERENCE_PRICE,
+            round(REFERENCE_PRICE * 1.05, 2),
+            round(REFERENCE_PRICE * 0.95, 2),
+            REFERENCE_PRICE,
+        ],
+        IS_RANDOMIZED_KEY: [False, False, False, False],
+    }
+
+    conversion_outcomes: ConversionOutcomes = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        CONVERSION_OUTCOME_KEY: [True, True, False, True],
+    }
+
+    churn_probabilities = calculate_churn_probabilities(
+        config=config,
+        generated_users=users_info,
+        user_pricing=assigned_prices,
+        conversion_outcomes=conversion_outcomes,
+    )
+
+    assert churn_probabilities[USER_ID_KEY] == users_info[USER_ID_KEY]
+    assert len(churn_probabilities[CHURN_PROB_KEY]) == config.n_users
+    assert all(
+        0.0 <= probability < 1.0 for probability in churn_probabilities[CHURN_PROB_KEY]
+    )
+
+
+# Churn Outcome
+
+
+def test_sample_deterministic_churn_outcomes_at_probability_boundaries() -> None:
+    """Sample deterministic outcomes for zero and one churn probabilities."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+    config = PricingDataConfig(
+        n_users=4,
+        n_weeks=1,
+        randomization_rate=0.0,
+        seed=42,
+        segments=segments,
+    )
+    churn_probabilities: ChurnProbabilities = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        CHURN_PROB_KEY: [1.0, 0.0, 0.0, 1.0],
+    }
+
+    sampled_churns = sample_churn_outcomes(
+        config=config,
+        churn_probabilities=churn_probabilities,
+    )
+
+    assert sampled_churns[USER_ID_KEY] == churn_probabilities[USER_ID_KEY]
+    assert sampled_churns[CHURN_OUTCOME_KEY] == [True, False, False, True]
+
+
+def test_preserve_users_when_sampling_churn_outcomes() -> None:
+    """Preserve user identifiers and generate one outcome per probability."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+    config = PricingDataConfig(
+        n_users=5,
+        n_weeks=4,
+        randomization_rate=0.1,
+        seed=42,
+        segments=segments,
+    )
+    churn_probabilities: ChurnProbabilities = {
+        USER_ID_KEY: [0, 1, 2, 3, 4],
+        CHURN_PROB_KEY: [0.05, 0.15, 0.25, 0.35, 0.45],
+    }
+
+    sampled_churns = sample_churn_outcomes(
+        config=config,
+        churn_probabilities=churn_probabilities,
+    )
+
+    assert len(sampled_churns[USER_ID_KEY]) == config.n_users
+    assert len(sampled_churns[CHURN_OUTCOME_KEY]) == config.n_users
+    assert sampled_churns[USER_ID_KEY] == churn_probabilities[USER_ID_KEY]
+    assert all(
+        isinstance(outcome, bool) for outcome in sampled_churns[CHURN_OUTCOME_KEY]
+    )
+
+
+def test_reproduce_identical_churn_outcomes_with_same_seed() -> None:
+    """Reproduce identical churn outcomes when using the same seed."""
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+    )
+
+    config = PricingDataConfig(
+        n_users=5,
+        n_weeks=4,
+        randomization_rate=0.01,
+        seed=42,
+        segments=segments,
+    )
+
+    churn_probabilities: ChurnProbabilities = {
+        USER_ID_KEY: list(range(5)),
+        CHURN_PROB_KEY: [0.10, 0.30, 0.50, 0.70, 0.90],
+    }
+
+    sampled_churns_1 = sample_churn_outcomes(
+        config=config,
+        churn_probabilities=churn_probabilities,
+    )
+
+    sampled_churns_2 = sample_churn_outcomes(
+        config=config,
+        churn_probabilities=churn_probabilities,
+    )
+
+    assert sampled_churns_1 == sampled_churns_2

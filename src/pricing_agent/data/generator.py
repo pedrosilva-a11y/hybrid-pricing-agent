@@ -14,6 +14,7 @@ USER_GENERATION_STREAM: Final = 0
 WEEKLY_DEMAND_STREAM: Final = 1
 PRICE_ASSIGNMENT_STREAM: Final = 2
 CONVERSION_OUTCOME_STREAM: Final = 3
+CHURN_OUTCOME_STREAM: Final = 4
 
 # User Population Global Variables
 ALLOWED_ACQUISITION_CHANNELS: Final = ("organic", "paid_search", "affiliate")
@@ -64,6 +65,17 @@ TIER_MARGINAL_COST_MAPPING: Final = {
     "basic": 4.00,
     "premium": 8.00,
 }
+
+# Churn Computation Global Variables
+CHURN_PRICE_SENSITIVITY: Final = 1.5
+CHURN_PROB_KEY: Final = "churn_probability"
+TIER_CHURN_ADJUSTMENT: Final = {
+    "basic": 0.0,
+    "premium": -0.30,
+}
+
+# Churn Outcome Global Variable
+CHURN_OUTCOME_KEY: Final = "churn_outcome"
 
 
 class UserPopulation(TypedDict):
@@ -178,6 +190,32 @@ class UserMarginalCosts(TypedDict):
 
     user_id: list[int]
     marginal_cost: list[float]
+
+
+class ChurnProbabilities(TypedDict):
+    """Column-oriented synthetic user churn probabilities.
+
+    Attributes:
+        user_id: Unique user identifier.
+        churn_probability: Probability that the user churns under the
+            simulated pricing and subscription conditions.
+    """
+
+    user_id: list[int]
+    churn_probability: list[float]
+
+
+class ChurnOutcomes(TypedDict):
+    """Column-oriented synthetic user churn outcomes.
+
+    Attributes:
+        user_id: Unique user identifier.
+        churn_outcome: Whether the user churned under the simulated pricing
+            and subscription conditions.
+    """
+
+    user_id: list[int]
+    churn_outcome: list[bool]
 
 
 def derive_seed(master_seed: int, stream: int) -> int:
@@ -426,4 +464,87 @@ def assign_marginal_costs(generated_users: UserPopulation) -> UserMarginalCosts:
     return {
         USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
         MARGINAL_COST_KEY: marginal_costs,
+    }
+
+
+def calculate_churn_probabilities(
+    config: PricingDataConfig,
+    generated_users: UserPopulation,
+    user_pricing: AssignedUserPrices,
+    conversion_outcomes: ConversionOutcomes,
+) -> ChurnProbabilities:
+    """Calculate the churn probability for each synthetic user.
+
+    Args:
+        config: Generation configuration containing customer segment parameters.
+        generated_users: Synthetic user population containing segment and tier.
+        user_pricing: User-level observed pricing assignments.
+        conversion_outcomes: User-level conversion outcomes.
+
+    Returns:
+        Column-oriented churn probabilities with one probability per user.
+    """
+    segment_lookup = {segment.name.strip(): segment for segment in config.segments}
+
+    churn_probabilities: list[float] = []
+
+    for index in range(len(generated_users[USER_ID_KEY])):
+        converted = conversion_outcomes[CONVERSION_OUTCOME_KEY][index]
+
+        if not converted:
+            churn_probabilities.append(0.0)
+            continue
+
+        user_segment = generated_users[SEGMENT_KEY][index]
+        subscription_tier = generated_users[TIER_KEY][index]
+
+        segment = segment_lookup[user_segment]
+
+        baseline_churn = segment.baseline_churn
+        observed_price = user_pricing[OBSERVED_PRICE_KEY][index]
+
+        log_odds = math.log(baseline_churn / (1 - baseline_churn))
+
+        price_effect = CHURN_PRICE_SENSITIVITY * math.log(
+            observed_price / REFERENCE_PRICE
+        )
+
+        tier_effect = TIER_CHURN_ADJUSTMENT[subscription_tier]
+
+        logits = log_odds + price_effect + tier_effect
+
+        churn_probability = 1 / (1 + math.exp(-logits))
+
+        churn_probabilities.append(churn_probability)
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        CHURN_PROB_KEY: churn_probabilities,
+    }
+
+
+def sample_churn_outcomes(
+    config: PricingDataConfig,
+    churn_probabilities: ChurnProbabilities,
+) -> ChurnOutcomes:
+    """Sample churn outcomes from user churn probabilities.
+
+    Args:
+        config: Generation configuration containing the random seed.
+        churn_probabilities: User-level probabilities of churn.
+
+    Returns:
+        Column-oriented user churn outcomes indicating whether the user churned.
+    """
+    prob_array = np.array(churn_probabilities[CHURN_PROB_KEY])
+
+    rng = np.random.default_rng(derive_seed(config.seed, CHURN_OUTCOME_STREAM))
+
+    random_draws = rng.random(size=prob_array.shape)
+
+    churn_array = random_draws < prob_array
+
+    return {
+        USER_ID_KEY: churn_probabilities[USER_ID_KEY].copy(),
+        CHURN_OUTCOME_KEY: churn_array.tolist(),
     }
