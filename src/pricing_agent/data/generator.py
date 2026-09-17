@@ -50,12 +50,19 @@ CONVERSION_PROB_KEY: Final = "conversion_probability"
 # Conversion Outcome Global Variable
 CONVERSION_OUTCOME_KEY: Final = "conversion_outcome"
 
-# Acquisition Cost Mapping Global Variable
+# Acquisition Cost Mapping Global Variables
 ACQUISITION_COST_KEY: Final = "acquisition_cost"
 ACQ_COST_MAPPING: Final = {
     "organic": 3.00,
     "affiliate": 10.00,
     "paid_search": 20.00,
+}
+
+# Marginal Cost Mapping Global Variables
+MARGINAL_COST_KEY: Final = "marginal_cost"
+TIER_MARGINAL_COST_MAPPING: Final = {
+    "basic": 4.00,
+    "premium": 8.00,
 }
 
 
@@ -159,6 +166,18 @@ class UserAcquisitionCosts(TypedDict):
 
     user_id: list[int]
     acquisition_cost: list[float]
+
+
+class UserMarginalCosts(TypedDict):
+    """Column-oriented synthetic user marginal costs.
+
+    Attributes:
+        user_id: Unique user identifier.
+        marginal_cost: Incremental cost of serving the user.
+    """
+
+    user_id: list[int]
+    marginal_cost: list[float]
 
 
 def derive_seed(master_seed: int, stream: int) -> int:
@@ -379,12 +398,32 @@ def assign_acquisition_costs(generated_users: UserPopulation) -> UserAcquisition
     """
     acquisition_costs: list[float] = []
 
-    for index in range(len(generated_users[USER_ID_KEY])):
-        user_channel = generated_users[CHANNEL_KEY][index]
-        user_acquisition_cost = ACQ_COST_MAPPING[user_channel]
+    for channel in generated_users[CHANNEL_KEY]:
+        user_acquisition_cost = ACQ_COST_MAPPING[channel]
         acquisition_costs.append(user_acquisition_cost)
 
     return {
         USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
         ACQUISITION_COST_KEY: acquisition_costs,
+    }
+
+
+def assign_marginal_costs(generated_users: UserPopulation) -> UserMarginalCosts:
+    """Map each user's subscription tier to a marginal cost.
+
+    Args:
+        generated_users: Synthetic user population containing the subscription tiers.
+
+    Returns:
+        Column-oriented user marginal cost with one cost per user.
+    """
+    marginal_costs: list[float] = []
+
+    for subscription_tier in generated_users[TIER_KEY]:
+        user_marginal_cost = TIER_MARGINAL_COST_MAPPING[subscription_tier]
+        marginal_costs.append(user_marginal_cost)
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        MARGINAL_COST_KEY: marginal_costs,
     }

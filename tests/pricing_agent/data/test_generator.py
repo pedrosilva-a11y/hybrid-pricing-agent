@@ -18,12 +18,14 @@ from pricing_agent.data.generator import (
     DEMAND_LOW_BOUND,
     DEMAND_MEAN,
     IS_RANDOMIZED_KEY,
+    MARGINAL_COST_KEY,
     OBSERVED_PRICE_KEY,
     PRICE_KEY,
     REFERENCE_PRICE,
     SEGMENT_KEY,
     SIGNUP_WEEK_KEY,
     TIER_KEY,
+    TIER_MARGINAL_COST_MAPPING,
     USER_ID_KEY,
     WEEK_KEY,
     AssignedUserPrices,
@@ -31,6 +33,7 @@ from pricing_agent.data.generator import (
     UserPopulation,
     WeeklyDemand,
     assign_acquisition_costs,
+    assign_marginal_costs,
     assign_user_prices,
     calculate_conversion_probabilities,
     generate_users,
@@ -565,4 +568,44 @@ def test_preserve_users_when_assigning_acquisition_costs() -> None:
     assert all(
         acquisition_cost >= 0
         for acquisition_cost in acquisition_costs[ACQUISITION_COST_KEY]
+    )
+
+
+# Marginal Costs
+
+
+def test_assign_expected_marginal_costs_from_subscription_tiers() -> None:
+    """Assign the expected marginal cost for each known subscription tier."""
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1],
+        SIGNUP_WEEK_KEY: [0, 1],
+        SEGMENT_KEY: ["regular", "regular"],
+        CHANNEL_KEY: ["organic", "organic"],
+        TIER_KEY: ["basic", "premium"],
+    }
+
+    marginal_costs = assign_marginal_costs(users_info)
+
+    assert marginal_costs[USER_ID_KEY] == users_info[USER_ID_KEY]
+    for index, tier in enumerate(users_info[TIER_KEY]):
+        mapped_cost = TIER_MARGINAL_COST_MAPPING[tier]
+        assert mapped_cost == marginal_costs[MARGINAL_COST_KEY][index]
+
+
+def test_preserve_users_when_assigning_marginal_costs() -> None:
+    """Preserve user identifiers and assign one marginal cost per user."""
+    users_info: UserPopulation = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        SIGNUP_WEEK_KEY: [0, 1, 2, 3],
+        SEGMENT_KEY: ["regular", "regular", "regular", "regular"],
+        CHANNEL_KEY: ["organic", "organic", "organic", "organic"],
+        TIER_KEY: ["basic", "premium", "basic", "premium"],
+    }
+
+    marginal_costs = assign_marginal_costs(users_info)
+
+    assert marginal_costs[USER_ID_KEY] == users_info[USER_ID_KEY]
+    assert len(marginal_costs[MARGINAL_COST_KEY]) == len(users_info[USER_ID_KEY])
+    assert all(
+        marginal_cost >= 0 for marginal_cost in marginal_costs[MARGINAL_COST_KEY]
     )
