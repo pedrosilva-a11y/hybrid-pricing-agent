@@ -9,6 +9,7 @@ from pricing_agent.data.generator import (
     ACQ_COST_MAPPING,
     ACQUISITION_COST_KEY,
     ALLOWED_ACQUISITION_CHANNELS,
+    ALLOWED_SUBSCRIPTION_TIERS,
     CHANNEL_KEY,
     CONVERSION_OUTCOME_KEY,
     CONVERSION_PROB_KEY,
@@ -22,6 +23,7 @@ from pricing_agent.data.generator import (
     REFERENCE_PRICE,
     SEGMENT_KEY,
     SIGNUP_WEEK_KEY,
+    TIER_KEY,
     USER_ID_KEY,
     WEEK_KEY,
     AssignedUserPrices,
@@ -83,6 +85,8 @@ def test_generate_users_information(
     assert generated_segments <= configured_segments
     assert len(users_info[CHANNEL_KEY]) == n_users
     assert set(users_info[CHANNEL_KEY]) <= set(ALLOWED_ACQUISITION_CHANNELS)
+    assert len(users_info[TIER_KEY]) == n_users
+    assert set(users_info[TIER_KEY]) <= set(ALLOWED_SUBSCRIPTION_TIERS)
 
 
 def test_reproduce_identical_users_with_same_seed(
@@ -267,6 +271,7 @@ def test_calculate_baseline_conversion_probability_under_reference_conditions() 
         SIGNUP_WEEK_KEY: [0],
         SEGMENT_KEY: ["regular"],
         CHANNEL_KEY: ["organic"],
+        TIER_KEY: ["basic"],
     }
 
     assigned_prices: AssignedUserPrices = {
@@ -310,6 +315,7 @@ def test_decrease_conversion_probability_as_price_increases() -> None:
         SIGNUP_WEEK_KEY: [0, 0, 0],
         SEGMENT_KEY: ["regular", "regular", "regular"],
         CHANNEL_KEY: ["organic", "organic", "organic"],
+        TIER_KEY: ["basic", "basic", "basic"],
     }
 
     assigned_prices: AssignedUserPrices = {
@@ -360,6 +366,7 @@ def test_increase_conversion_probability_as_demand_increases() -> None:
         SIGNUP_WEEK_KEY: [0, 1, 2],
         SEGMENT_KEY: ["regular", "regular", "regular"],
         CHANNEL_KEY: ["organic", "organic", "organic"],
+        TIER_KEY: ["basic", "basic", "basic"],
     }
 
     assigned_prices: AssignedUserPrices = {
@@ -530,6 +537,7 @@ def test_assign_expected_acquisition_costs_from_channels() -> None:
         SIGNUP_WEEK_KEY: [0, 1, 2],
         SEGMENT_KEY: ["regular", "regular", "regular"],
         CHANNEL_KEY: ["organic", "affiliate", "paid_search"],
+        TIER_KEY: ["basic", "basic", "basic"],
     }
 
     acquisition_costs = assign_acquisition_costs(users_info)
@@ -547,6 +555,7 @@ def test_preserve_users_when_assigning_acquisition_costs() -> None:
         SIGNUP_WEEK_KEY: [0, 1, 2, 3],
         SEGMENT_KEY: ["regular", "regular", "premium", "premium"],
         CHANNEL_KEY: ["organic", "affiliate", "paid_search", "organic"],
+        TIER_KEY: ["basic", "basic", "basic", "basic"],
     }
 
     acquisition_costs = assign_acquisition_costs(users_info)

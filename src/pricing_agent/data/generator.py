@@ -17,9 +17,11 @@ CONVERSION_OUTCOME_STREAM: Final = 3
 
 # User Population Global Variables
 ALLOWED_ACQUISITION_CHANNELS: Final = ("organic", "paid_search", "affiliate")
+ALLOWED_SUBSCRIPTION_TIERS: Final = ("basic", "premium")
 CHANNEL_KEY: Final = "channel"
 SEGMENT_KEY: Final = "segment"
 SIGNUP_WEEK_KEY: Final = "signup_week"
+TIER_KEY: Final = "tier"
 USER_ID_KEY: Final = "user_id"
 
 # Weekly Demand Global Variables
@@ -65,12 +67,14 @@ class UserPopulation(TypedDict):
         signup_week: Week the user enters the simulated population.
         segment: Customer segment assigned to the user.
         channel: Acquisition channel through which the user was acquired.
+        tier: Subscription tier assigned to the user.
     """
 
     user_id: list[int]
     signup_week: list[int]
     segment: list[str]
     channel: list[str]
+    tier: list[str]
 
 
 class WeeklyDemand(TypedDict):
@@ -179,6 +183,7 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
         SIGNUP_WEEK_KEY: [],
         SEGMENT_KEY: [],
         CHANNEL_KEY: [],
+        TIER_KEY: [],
     }
 
     segment_names = [segment.name.strip() for segment in config.segments]
@@ -188,6 +193,7 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
         synthetic_data[SIGNUP_WEEK_KEY].append(rng.randrange(config.n_weeks))
         synthetic_data[SEGMENT_KEY].append(rng.choice(segment_names))
         synthetic_data[CHANNEL_KEY].append(rng.choice(ALLOWED_ACQUISITION_CHANNELS))
+        synthetic_data[TIER_KEY].append(rng.choice(ALLOWED_SUBSCRIPTION_TIERS))
 
     return synthetic_data
 
