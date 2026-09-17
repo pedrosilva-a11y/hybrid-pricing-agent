@@ -138,12 +138,3 @@ def run_pipeline() -> PipelineOutput:
         churn_probabilities=churn_probabilities,
         churn_outcomes=sampled_churn_outcomes,
     )
-
-
-def main() -> None:
-    """Run the synthetic data generation pipeline."""
-    run_pipeline()
-
-
-if __name__ == "__main__":
-    main()

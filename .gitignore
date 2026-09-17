@@ -9,3 +9,6 @@
 
 # Python bytecode cache
 __pycache__/
+
+# Database
+*.duckdb
