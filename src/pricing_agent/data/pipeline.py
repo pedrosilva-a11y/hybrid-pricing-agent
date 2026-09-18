@@ -1,8 +1,8 @@
 """Synthetic data generation pipeline."""
 
-from typing import Final, TypedDict
+from typing import TypedDict
 
-from pricing_agent.data.config import PricingDataConfig, SegmentConfig
+from pricing_agent.data.config import PricingDataConfig
 from pricing_agent.data.generator import (
     AssignedUserPrices,
     ChurnOutcomes,
@@ -25,12 +25,6 @@ from pricing_agent.data.generator import (
     sample_churn_outcomes,
     sample_conversions,
 )
-
-# Configuration Definitions Global Variables
-N_USERS: Final = 100
-N_WEEKS: Final = 24
-RANDOMIZATION_RATE: Final = 0.1
-SEED: Final = 42
 
 
 class PipelineOutput(TypedDict):
@@ -61,31 +55,15 @@ class PipelineOutput(TypedDict):
     churn_outcomes: ChurnOutcomes
 
 
-def run_pipeline() -> PipelineOutput:
-    """Run the synthetic data generation pipeline sequentially."""
-    segments = (
-        SegmentConfig(
-            name="regular",
-            price_coefficient=-2.0,
-            baseline_conversion=0.40,
-            baseline_churn=0.20,
-        ),
-        SegmentConfig(
-            name="premium",
-            price_coefficient=-0.8,
-            baseline_conversion=0.55,
-            baseline_churn=0.12,
-        ),
-    )
+def run_pipeline(config: PricingDataConfig) -> PipelineOutput:
+    """Run the synthetic data generation pipeline sequentially.
 
-    config = PricingDataConfig(
-        n_users=N_USERS,
-        n_weeks=N_WEEKS,
-        randomization_rate=RANDOMIZATION_RATE,
-        seed=SEED,
-        segments=segments,
-    )
+    Args:
+        config: Configuration controlling synthetic data generation.
 
+    Returns:
+        Column-oriented outputs produced by the synthetic data pipeline.
+    """
     users_info = generate_users(config)
 
     weekly_demand = generate_weekly_demand(config)

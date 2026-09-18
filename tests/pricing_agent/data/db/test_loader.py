@@ -5,32 +5,48 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from pricing_agent.data.config import PricingDataConfig, build_pricing_data_config
 from pricing_agent.data.db.database import connect_database, initialize_database
 from pricing_agent.data.db.loader import load_pipeline_output
-from pricing_agent.data.pipeline import N_USERS, N_WEEKS, run_pipeline
+from pricing_agent.data.pipeline import run_pipeline
 
 
-def test_load_pipeline_output_populates_all_tables(tmp_path: Path) -> None:
+@pytest.fixture
+def config() -> PricingDataConfig:
+    """Provide valid synthetic pricing data configuration."""
+    return build_pricing_data_config(
+        n_users=100,
+        n_weeks=24,
+        randomization_rate=0.1,
+        seed=42,
+    )
+
+
+def test_load_pipeline_output_populates_all_tables(
+    config: PricingDataConfig,
+    tmp_path: Path,
+) -> None:
     """Populate all DuckDB tables with generated pipeline data."""
     database_path = tmp_path / "test.duckdb"
     connection = connect_database(database_path)
-    output = run_pipeline()
+
+    output = run_pipeline(config)
 
     try:
         initialize_database(connection)
         load_pipeline_output(connection=connection, output=output)
 
         expected_counts = {
-            "weekly_demand": N_WEEKS,
-            "users": N_USERS,
-            "weekly_price": N_WEEKS,
-            "assigned_prices": N_USERS,
-            "conversion_probabilities": N_USERS,
-            "conversion_outcomes": N_USERS,
-            "acquisition_costs": N_USERS,
-            "marginal_costs": N_USERS,
-            "churn_probabilities": N_USERS,
-            "churn_outcomes": N_USERS,
+            "weekly_demand": config.n_weeks,
+            "users": config.n_users,
+            "weekly_price": config.n_weeks,
+            "assigned_prices": config.n_users,
+            "conversion_probabilities": config.n_users,
+            "conversion_outcomes": config.n_users,
+            "acquisition_costs": config.n_users,
+            "marginal_costs": config.n_users,
+            "churn_probabilities": config.n_users,
+            "churn_outcomes": config.n_users,
         }
 
         for table, expected_count in expected_counts.items():
@@ -42,11 +58,15 @@ def test_load_pipeline_output_populates_all_tables(tmp_path: Path) -> None:
         connection.close()
 
 
-def test_load_pipeline_output_preserves_user_values(tmp_path: Path) -> None:
-    """Persist generated values without changing their contents."""
+def test_load_pipeline_output_preserves_user_values(
+    config: PricingDataConfig,
+    tmp_path: Path,
+) -> None:
+    """Persist generated user values without changing their contents."""
     database_path = tmp_path / "test.duckdb"
     connection = connect_database(database_path)
-    output = run_pipeline()
+
+    output = run_pipeline(config)
 
     try:
         initialize_database(connection)
@@ -73,11 +93,15 @@ def test_load_pipeline_output_preserves_user_values(tmp_path: Path) -> None:
         connection.close()
 
 
-def test_load_pipeline_output_rolls_back_on_failure(tmp_path: Path) -> None:
+def test_load_pipeline_output_rolls_back_on_failure(
+    config: PricingDataConfig,
+    tmp_path: Path,
+) -> None:
     """Roll back all inserts when loading any table fails."""
     database_path = tmp_path / "test.duckdb"
     connection = connect_database(database_path)
-    output = run_pipeline()
+
+    output = run_pipeline(config)
 
     output["acquisition_costs"]["acquisition_cost"][0] = -1.0
 

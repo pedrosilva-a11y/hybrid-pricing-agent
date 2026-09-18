@@ -94,3 +94,44 @@ class PricingDataConfig:
 
         if len(segment_names) != len(set(segment_names)):
             raise ValueError("segment names must be unique.")
+
+
+def build_pricing_data_config(
+    n_users: int,
+    n_weeks: int,
+    randomization_rate: float,
+    seed: int,
+) -> PricingDataConfig:
+    """Build the synthetic pricing data configuration.
+
+    Args:
+        n_users: Number of synthetic users to generate.
+        n_weeks: Number of simulated weeks.
+        randomization_rate: Fraction of users assigned randomized prices.
+        seed: Random seed for reproducible generation.
+
+    Returns:
+        Pricing data configuration with the default customer segments.
+    """
+    segments = (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
+    )
+
+    return PricingDataConfig(
+        n_users=n_users,
+        n_weeks=n_weeks,
+        randomization_rate=randomization_rate,
+        seed=seed,
+        segments=segments,
+    )

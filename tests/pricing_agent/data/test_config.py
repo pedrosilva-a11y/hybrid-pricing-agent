@@ -2,7 +2,11 @@
 
 import pytest
 
-from pricing_agent.data.config import PricingDataConfig, SegmentConfig
+from pricing_agent.data.config import (
+    PricingDataConfig,
+    SegmentConfig,
+    build_pricing_data_config,
+)
 
 
 @pytest.fixture
@@ -259,3 +263,33 @@ def test_reject_segment_names_with_duplicate_whitespace_variants() -> None:
             seed=42,
             segments=segments,
         )
+
+
+def test_build_pricing_data_config_with_default_segments() -> None:
+    """Build pricing configuration with provided values and default segments."""
+    config = build_pricing_data_config(
+        n_users=500,
+        n_weeks=52,
+        randomization_rate=0.2,
+        seed=123,
+    )
+
+    assert config.n_users == 500
+    assert config.n_weeks == 52
+    assert config.randomization_rate == 0.2
+    assert config.seed == 123
+
+    assert config.segments == (
+        SegmentConfig(
+            name="regular",
+            price_coefficient=-2.0,
+            baseline_conversion=0.40,
+            baseline_churn=0.20,
+        ),
+        SegmentConfig(
+            name="premium",
+            price_coefficient=-0.8,
+            baseline_conversion=0.55,
+            baseline_churn=0.12,
+        ),
+    )
