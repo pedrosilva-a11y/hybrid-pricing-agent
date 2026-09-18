@@ -1,6 +1,7 @@
 # Synthetic Pricing Data-Generating Process
 
-**Status:** specification frozen for calibration; constants pending
+**Status:** calibrated and frozen — see §14
+**Selected candidate:** `balanced`
 **Scope:** customer population, pricing policy, promo assignment, randomized arm, conversion
 **Out of scope (deferred, see §13):** churn, post-treatment variables, cancellation text
 
@@ -17,8 +18,6 @@ Primary causal question:
 > What is the causal effect of changing subscription price on conversion probability?
 
 Historical prices are deliberately confounded by both measured and unmeasured variables. A randomized pricing arm provides a benchmark in which the assigned price is independent of all of them.
-
-Nothing in this document is implemented in the production generator until the calibration protocol in §10 is complete and the constants in §14 are filled in.
 
 ---
 
@@ -39,7 +38,7 @@ These are drawn independently of everything else. Stating them matters: the cent
 Three consequences worth stating explicitly:
 
 - Segment, channel, and tier are mutually independent. If any correlation is introduced later (for example, paid search skewing toward price-sensitive users), the centering convention in §6.5 must be revisited.
-- $\sigma_H = 1.0$ is fixed, not calibrated. Only the products $\alpha_H \sigma_H$, $\gamma_H \sigma_H$, and $\delta_H \sigma_H$ affect the process, so fixing the scale makes the sensitivity parameters uniquely identified. Note the asymmetry of units: $D_w - 1$ has a standard deviation of roughly $\sigma_D$ (about $0.08$), while $H_w$ has one. The coefficients $\delta_D$ and $\delta_H$ are therefore not directly comparable.
+- $\sigma_H = 1.0$ is fixed, not calibrated. Only the products $\alpha_H \sigma_H$, $\gamma_H \sigma_H$, and $\delta_H \sigma_H$ affect the process, so fixing the scale makes the sensitivity parameters uniquely identified. Note the asymmetry of units: $D_w - 1$ has a standard deviation of roughly $\sigma_D$ ($0.10$, see §14), while $H_w$ has one. The coefficients $\delta_D$ and $\delta_H$ are therefore not directly comparable.
 - Arm assignment is **complete randomization**, not Bernoulli. The arm size is fixed, so membership is weakly dependent across users while remaining independent of every covariate.
 
 ---
@@ -89,6 +88,8 @@ The DGP therefore distinguishes:
 - $\beta_s^{\mathrm{rand}}$ — the population coefficient targeted by the observable randomized-arm regression after marginalizing over the hidden shock.
 
 Calibration derives and records $\beta_s^{\mathrm{rand}}$ (§10.4) rather than assuming the two are numerically identical. Randomization removes confounding; it does not make logistic regression collapsible.
+
+At the frozen constants the two differ by $+0.020$ and $+0.018$ — within one standard error of zero. The distinction was measured, not assumed away, and turned out to be immaterial at this shock strength.
 
 ---
 
@@ -177,13 +178,13 @@ Weak demand and negative shocks increase promotional activity. The channel inter
 
 ### 6.3 Promo depth
 
-Conditional on $A_i = 1$, depth $d_i$ is drawn uniformly from $\{0.05, 0.10, 0.15\}$, independent of everything else; otherwise $d_i = 0$.
+Conditional on $A_i = 1$, depth $d_i$ is drawn uniformly from $\{0.05, 0.10, 0.20\}$, independent of everything else; otherwise $d_i = 0$.
 
 $$
 P_i = P^{\mathrm{base}}_{w(i),\,t(i)}\,(1 - d_i)
 $$
 
-This user-level draw is what creates overlap: two users in the same week, channel, and tier can face different prices.
+This user-level draw is what creates overlap: two users in the same week, channel, and tier can face different prices. The support was widened from $\{0.05, 0.10, 0.15\}$ during calibration because the minimum within-cell log-price SD sat at $0.043$ against a threshold of $0.04$ — too thin a margin to survive an unlucky seed.
 
 ### 6.4 Randomized arm
 
@@ -226,12 +227,12 @@ which is valid because channels are drawn uniformly (§2). With centering, $\pi_
 | $\sigma_H$ | $1.0$ |
 | $\beta^{\mathrm{struct}}_{\texttt{price\_sensitive}}$ | $-2.0$ |
 | $\beta^{\mathrm{struct}}_{\texttt{price\_resilient}}$ | $-0.8$ |
-| promo depth support | $\{0.05,\ 0.10,\ 0.15\}$ |
+| promo depth support | $\{0.05,\ 0.10,\ 0.20\}$ |
 | randomized multipliers | $\{0.85,\ 0.925,\ 1.00,\ 1.075,\ 1.15\}$ |
 | $P^{\mathrm{ref}}_{\texttt{basic}}$ | $19.99$ |
 | $P^{\mathrm{ref}}_{\texttt{premium}}$ | $29.99$ |
 
-**Calibrated (swept, §10):** $b_C$, $\gamma_D$, $\gamma_H$, $\alpha_D$, $\alpha_H$, $\delta_D$, $\delta_H$, $\delta_C$, $\pi_s$, $\sigma_D$.
+**Calibrated (swept, §10):** $b_C$, $\gamma_D$, $\gamma_H$, $\alpha_D$, $\alpha_H$, $\delta_D$, $\delta_H$, $\delta_C$, $\pi_s$, $\sigma_D$ — frozen values in §14.
 
 **Derived and frozen during calibration (§10.4):** $\beta^{\mathrm{rand}}_s$.
 
@@ -253,6 +254,8 @@ Each stream is derived via `SeedSequence([master_seed, stream_id])`. Existing ID
 | promo depth | 7 |
 | randomized-arm membership | 8 |
 
+Stream 0 uses `np.random.default_rng` as of the calibration commit. The earlier `random.Random` implementation produced a different population for the same master seed; the two are not interchangeable, and the switch was made deliberately before the constants were frozen.
+
 ---
 
 ## 9. Identification requirements
@@ -268,12 +271,14 @@ $$
 $$
 
 $$
-\operatorname{SD}\left[\log\!\left(\frac{P_i}{P^{\mathrm{ref}}_{t(i)}}\right)\right] \ \geq\ \tau_{\mathrm{overlap}}, \qquad \text{initial target } \tau_{\mathrm{overlap}} = 0.04
+\operatorname{SD}\left[\log\!\left(\frac{P_i}{P^{\mathrm{ref}}_{t(i)}}\right)\right] \ \geq\ \tau_{\mathrm{overlap}}
 $$
 
 Tier is included in the cell definition so that differing tier reference prices cannot masquerade as within-tier price variation.
 
 A promo rate of exactly $0$ or $1$ in an eligible cell fails the candidate immediately for that seed.
+
+Terciles are computed with `labels=False, duplicates="drop"`, followed by an explicit check that exactly three bins resulted. Duplicate quantile edges must not silently produce mislabeled bins, but a genuinely degenerate demand draw must fail loudly.
 
 ### 9.1.1 Price validity
 
@@ -305,9 +310,11 @@ Calibration selects constants before the production generator is touched. Its go
 
 ### 10.1 Population and seeds
 
-- $20{,}000$ users per run; the final candidate is re-confirmed at full size (§11.3).
+- $60{,}000$ users over $1{,}000$ weeks per pilot run; the selected candidate is re-confirmed at full size (§11.3).
 - Three fixed seeds per candidate, never averaged inside the script: one CSV row per $\texttt{candidate} \times \texttt{seed}$.
-- Minimum cell population for overlap eligibility: documented with the frozen constants. Cells below it are reported but cannot fail a candidate.
+- Minimum cell population for overlap eligibility: $100$. Cells below it are reported but cannot fail a candidate.
+
+The week count matters more than it appears. Demand and the hidden shock vary by week, so the effective sample for the confounding path is the number of weeks, not the number of users. At $240$ weeks the paired hidden-confounding gap swung by $0.70$ across seeds; at $1{,}000$ weeks it swings by $0.17$. Standard errors are clustered on week for the same reason.
 
 ### 10.2 Regression specifications
 
@@ -329,7 +336,9 @@ The observable randomized fit intentionally omits `hidden_shock`, because the pr
 
 The oracle-randomized fit serves a different purpose: it contains the complete structural conversion specification, so it should recover $\beta_s^{\mathrm{struct}}$ directly.
 
-Estimation uses `statsmodels.Logit` throughout — unpenalized, with standard errors. Scikit-learn's `LogisticRegression` regularizes by default, which shrinks coefficients toward zero and is indistinguishable from the attenuation being measured.
+The pilot fits only the three observational specifications; confirmation adds the two randomized ones (see §11.3).
+
+Estimation uses `statsmodels.Logit` throughout — unpenalized, with standard errors clustered on week. Scikit-learn's `LogisticRegression` regularizes by default, which shrinks coefficients toward zero and is indistinguishable from the attenuation being measured.
 
 With `price_sensitive` as the reference segment:
 
@@ -363,35 +372,47 @@ The observable randomized regression identifies the causal effect without confou
 
 Calibration therefore records two quantities per segment: $\beta_s^{\mathrm{struct}}$, used directly in the conversion DGP, and $\beta_s^{\mathrm{rand}}$, the population coefficient corresponding to the observable randomized regression.
 
-$\beta_s^{\mathrm{rand}}$ is derived during the full-size calibration run from a high-precision synthetic randomized population — at least $10^6$ users across three seeds, fitted with the observable randomized specification — and is then frozen in §14 together with its standard error. Because it is itself an estimate, its recovery criterion carries the same precision floor as every other SE-based rule.
+$\beta_s^{\mathrm{rand}}$ is derived from a high-precision synthetic randomized population — $1{,}200{,}000$ users across three seeds at $3{,}000$ weeks, fitted with the observable randomized specification — and frozen in §14 together with its standard error. Because it is itself an estimate, its recovery criterion carries the same precision floor as every other SE-based rule, and the target's own SE enters the comparison.
 
-The quantity
+The quantity $\beta_s^{\mathrm{rand}} - \beta_s^{\mathrm{struct}}$ is recorded as the **non-collapsibility attenuation**.
+
+### 10.4.1 Paired hidden-confounding estimator
+
+Scoring the controlled fit against $\beta^{\mathrm{rand}}$ compares estimates from two independent data draws, so each seed's realized demand and shock values enter the difference and never cancel. The paired contrast avoids this:
 
 $$
-\beta_s^{\mathrm{rand}} - \beta_s^{\mathrm{struct}}
+\text{paired gap} = \hat\beta^{\mathrm{ctrl}} - \hat\beta^{\mathrm{oracle}}
 $$
 
-is recorded as the **non-collapsibility attenuation** for that segment.
+Both fits use the same rows of the same data and differ only by the inclusion of $H_w$, so a seed-level shift differences out. Measured on the confirmation runs, the paired gap varies by $0.17$ across seeds where the $\beta^{\mathrm{rand}}$ version varies by $0.46$.
 
-Evaluation targets:
+The paired gap still contains the specification effect of adding $H_w$. The randomized arm isolates that effect alone, since treatment there is independent of the shock:
+
+$$
+\text{specification effect} = \hat\beta^{\mathrm{rand\text{-}fit}} - \hat\beta^{\mathrm{oracle\text{-}rand}}
+$$
+
+$$
+\text{corrected hidden confounding} = \left(\hat\beta^{\mathrm{ctrl}} - \hat\beta^{\mathrm{oracle}}\right) - \left(\hat\beta^{\mathrm{rand\text{-}fit}} - \hat\beta^{\mathrm{oracle\text{-}rand}}\right)
+$$
+
+Caveat: the specification effect depends on the treatment distribution, and the randomized arm has wider price support than the observational arm, so the subtraction is close but not exact. At the frozen constants the specification effect is approximately zero (measured: $-0.002$ to $+0.007$), so the correction is immaterial here — but it is computed rather than assumed.
+
+### 10.4.2 Evaluation targets
 
 | Fit | Target |
 |---|---|
+| naive (observational) | $\beta_s^{\mathrm{struct}}$ |
+| controlled (observational) | paired against the oracle fit (§10.4.1); error against $\beta^{\mathrm{rand}}$ recorded as a diagnostic |
+| oracle diagnostic (observational) | $\beta_s^{\mathrm{struct}}$ |
 | observable randomized | $\beta_s^{\mathrm{rand}}$ |
 | oracle randomized | $\beta_s^{\mathrm{struct}}$ |
-| oracle diagnostic (observational) | $\beta_s^{\mathrm{struct}}$ |
-| naive (observational) | $\beta_s^{\mathrm{struct}}$ |
-| controlled (observational) | $\beta_s^{\mathrm{rand}}$ — see below |
-
-The controlled fit omits `hidden_shock` exactly as the observable randomized fit does, so its gap from $\beta^{\mathrm{struct}}$ contains both hidden confounding and the same non-collapsibility attenuation. Scoring its residual against $\beta^{\mathrm{rand}}$ isolates the confounding component, which is the claim the criterion exists to support.
-
-One caveat is documented rather than assumed away: the attenuation factor depends on the distribution of treatment, and the observational arm has narrower price support than the randomized arm. $\beta^{\mathrm{rand}}$ is therefore a close but not exact attenuation benchmark for the observational arm. The calibration artifact records the controlled error against **both** targets, so this choice can be revisited without re-running the sweep.
 
 The three headline gaps, in the order they are presented:
 
 $$
 \underbrace{\hat\beta^{\mathrm{naive}} - \hat\beta^{\mathrm{ctrl}}}_{\text{measured confounding removed}}, \qquad
-\underbrace{\hat\beta^{\mathrm{ctrl}} - \beta^{\mathrm{rand}}}_{\text{hidden confounding remaining}}, \qquad
+\underbrace{\hat\beta^{\mathrm{ctrl}} - \hat\beta^{\mathrm{oracle}}}_{\text{hidden confounding remaining}}, \qquad
 \underbrace{\beta^{\mathrm{rand}} - \beta^{\mathrm{struct}}}_{\text{non-collapsibility}}
 $$
 
@@ -399,7 +420,7 @@ $$
 
 ## 11. Acceptance criteria
 
-Each criterion must hold **on every calibration seed**.
+Each criterion must hold **on every seed**.
 
 ### 11.1 Behavior
 
@@ -424,33 +445,23 @@ A paid-search promo rate of $0.42$ with healthy within-cell variation beats $0.5
 
 ### 11.2 Statistical behavior
 
-Errors are defined against the target appropriate to each fit (§10.4).
+Errors are defined against the target appropriate to each fit (§10.4.2), with $\varepsilon_s^{\mathrm{struct}} = \hat\beta_s - \beta_s^{\mathrm{struct}}$ and $\varepsilon_s^{\mathrm{rand}} = \hat\beta_s - \beta_s^{\mathrm{rand}}$.
 
-For fits evaluated against the structural coefficient:
+| Criterion | Rule | Phase |
+|---|---|---|
+| naive bias, signed | $\varepsilon_s^{\mathrm{naive,struct}} \geq +0.50$ | both |
+| controlled improves | $\lvert \varepsilon_s^{\mathrm{ctrl,struct}} \rvert < \lvert \varepsilon_s^{\mathrm{naive,struct}} \rvert$ | both |
+| paired hidden confounding | $\hat\beta^{\mathrm{ctrl}}_s - \hat\beta^{\mathrm{oracle}}_s \geq 0.20$ | both |
+| corrected hidden confounding | corrected gap $\geq 0.20$ | confirmation |
+| oracle observational recovers $\beta^{\mathrm{struct}}$ | $\lvert \varepsilon_s^{\mathrm{oracle,struct}} \rvert \leq 3\operatorname{SE}^{\mathrm{oracle}}_s$ and $\operatorname{SE}^{\mathrm{oracle}}_s \leq \tau_{\mathrm{SE}}$ | confirmation |
+| randomized recovers $\beta^{\mathrm{rand}}$ | $\lvert \varepsilon_s^{\mathrm{rand\text{-}fit,rand}} \rvert \leq 3\sqrt{(\operatorname{SE}^{\mathrm{rand\text{-}fit}}_s)^2 + (\operatorname{SE}^{\mathrm{target}}_s)^2}$ and $\operatorname{SE}^{\mathrm{rand\text{-}fit}}_s \leq \tau_{\mathrm{SE}}$ | confirmation |
+| oracle randomized recovers $\beta^{\mathrm{struct}}$ | $\lvert \varepsilon_s^{\mathrm{oracle\text{-}rand,struct}} \rvert \leq 3\operatorname{SE}^{\mathrm{oracle\text{-}rand}}_s$ and $\operatorname{SE}^{\mathrm{oracle\text{-}rand}}_s \leq \tau_{\mathrm{SE}}$ | confirmation |
 
-$$
-\varepsilon_s^{\mathrm{struct}} = \hat\beta_s - \beta_s^{\mathrm{struct}}
-$$
-
-For fits evaluated against the randomized target:
-
-$$
-\varepsilon_s^{\mathrm{rand}} = \hat\beta_s - \beta_s^{\mathrm{rand}}
-$$
-
-| Criterion | Rule |
-|---|---|
-| naive bias, signed | $\varepsilon_s^{\mathrm{naive,struct}} \geq +0.5$ |
-| controlled improves | $\lvert \varepsilon_s^{\mathrm{ctrl,struct}} \rvert < \lvert \varepsilon_s^{\mathrm{naive,struct}} \rvert$ |
-| controlled residual is real | $\varepsilon_s^{\mathrm{ctrl,rand}} \geq +0.2$ and $\varepsilon_s^{\mathrm{ctrl,rand}} / \operatorname{SE}^{\mathrm{ctrl}}_s \geq 2$ |
-| oracle observational recovers structural $\beta$ | $\lvert \varepsilon_s^{\mathrm{oracle,struct}} \rvert \leq 2\operatorname{SE}^{\mathrm{oracle}}_s$ and $\operatorname{SE}^{\mathrm{oracle}}_s \leq \tau_{\mathrm{SE}}$ |
-| randomized recovers randomized target | $\lvert \varepsilon_s^{\mathrm{rand\text{-}fit,rand}} \rvert \leq 2\operatorname{SE}^{\mathrm{rand\text{-}fit}}_s$ and $\operatorname{SE}^{\mathrm{rand\text{-}fit}}_s \leq \tau_{\mathrm{SE}}$ |
-| oracle randomized recovers structural $\beta$ | $\lvert \varepsilon_s^{\mathrm{oracle\text{-}rand,struct}} \rvert \leq 2\operatorname{SE}^{\mathrm{oracle\text{-}rand}}_s$ and $\operatorname{SE}^{\mathrm{oracle\text{-}rand}}_s \leq \tau_{\mathrm{SE}}$ |
-
-Two notes on why the criteria are shaped this way:
+Three notes on why the criteria are shaped this way:
 
 - **The sign is part of the contract.** Both confounding paths push the same direction — high demand and positive shocks raise price and raise conversion — so the naive estimate is biased upward, meaning less negative than the truth. An error of the same magnitude in the opposite direction indicates a broken DGP, not a passing candidate.
-- **Every SE-based rule carries a precision floor $\tau_{\mathrm{SE}}$.** Without it, an underpowered fit passes by being too noisy to contradict anything, and the problem worsens as samples grow: $\operatorname{SE} \to 0$ while a systematic gap can remain. $\tau_{\mathrm{SE}}$ is set from the pilot and recorded in §14; a starting value of $0.15$ per segment is reasonable.
+- **Every SE-based rule carries a precision floor $\tau_{\mathrm{SE}}$.** Without it, an underpowered fit passes by being too noisy to contradict anything, and the problem worsens as samples grow: $\operatorname{SE} \to 0$ while a systematic gap can remain.
+- **The tolerance is 3 SE, not 2, because of multiple comparisons.** Confirmation runs six recovery checks per seed across three seeds. At 2 SE, eighteen simultaneous tests pass together only about 40% of the time even when the DGP is correct. At 3 SE that rises to roughly 95%. The precision floor is what keeps the test meaningful; widening the tolerance without it would not be acceptable.
 
 ### 11.3 Robustness
 
@@ -458,6 +469,7 @@ Two notes on why the criteria are shaped this way:
 - The selected candidate is re-run at the full known-answer population and re-passes every criterion before its constants are frozen.
 - Separation or regression failure marks the candidate failed and is recorded; it never terminates the sweep.
 - Any candidate producing a non-positive price is recorded as failed before regression fitting.
+- Pilot and confirmation gate different criteria. The pilot gates point-estimate geometry only — naive bias, controlled improvement, paired hidden confounding — while SE-based recovery is confirmation-only, because a pilot-sized arm cannot meet $\tau_{\mathrm{SE}}$ and would reject every candidate for lack of power rather than for behavior.
 
 ---
 
@@ -484,7 +496,7 @@ Two tests enforce this: the observable database contains no oracle table, and th
 
 ## 13. Deferred extensions
 
-Anything here changes the DGP and therefore **requires recalibration**. Nothing in this section is implemented before §14 is filled in.
+Anything here changes the DGP and therefore **requires recalibration**.
 
 ### 13.1 Post-treatment variables
 
@@ -514,30 +526,48 @@ The redesign: for converted users, a monthly hazard driven by price, tier, segme
 
 ## 14. Frozen constants
 
-*Filled in after calibration completes. Until then, the DGP is specified but not calibrated.*
+Selected candidate: **`balanced`**.
 
 | Item | Value |
 |---|---|
-| $b_{\texttt{organic}},\ b_{\texttt{affiliate}},\ b_{\texttt{paid\_search}}$ | TBD |
-| $\gamma_D,\ \gamma_H$ | TBD |
-| $\alpha_D,\ \alpha_H$ | TBD |
-| $\delta_D,\ \delta_H$ | TBD |
-| $\delta_C$ (centered) | TBD |
-| $\pi_s$ (segment baseline conversion) | TBD |
-| $\sigma_D$ | TBD |
-| $\beta^{\mathrm{rand}}_{\texttt{price\_sensitive}}$ (with SE) | TBD |
-| $\beta^{\mathrm{rand}}_{\texttt{price\_resilient}}$ (with SE) | TBD |
-| non-collapsibility attenuation by segment | TBD |
-| realized arm-balance tolerances | TBD |
-| $\tau_{\mathrm{overlap}}$ | TBD |
-| $\tau_{\mathrm{SE}}$ | TBD |
-| minimum cell population | TBD |
-| calibration population and seeds | TBD |
-| high-precision population used to derive $\beta^{\mathrm{rand}}$ | TBD |
-| final fixture: $n_{\mathrm{users}}$, randomization rate $r$ | TBD |
-| selected `candidate_id` | TBD |
+| $b_{\texttt{organic}},\ b_{\texttt{affiliate}},\ b_{\texttt{paid\_search}}$ | $-1.73,\ -0.85,\ 0.0$ |
+| $\gamma_D,\ \gamma_H$ (promo) | $5.0,\ 0.45$ |
+| $\alpha_D,\ \alpha_H$ (price) | $0.20,\ 0.025$ |
+| $\delta_D,\ \delta_H$ (conversion) | $5.0,\ 0.10$ |
+| $\delta_C$ (centered: organic, affiliate, paid search) | $-0.10,\ 0.0,\ +0.10$ |
+| $\pi_s$ (baseline conversion) | $0.35$ sensitive, $0.40$ resilient |
+| $\sigma_D$ | $0.10$ |
+| $\beta^{\mathrm{rand}}_{\texttt{price\_sensitive}}$ | $-1.9796$ (SE $0.0261$, seed SD $0.0446$) |
+| $\beta^{\mathrm{rand}}_{\texttt{price\_resilient}}$ | $-0.7825$ (SE $0.0254$, seed SD $0.0698$) |
+| non-collapsibility attenuation | $+0.020$ and $+0.018$ — within one SE of zero |
+| $\tau_{\mathrm{overlap}}$ | $0.04$ |
+| $\tau_{\mathrm{SE}}$ | $0.15$ |
+| minimum cell population | $100$ |
+| pilot run | $60{,}000$ users, $1{,}000$ weeks, $r = 0.10$, seeds $(11, 22, 33)$ |
+| $\beta^{\mathrm{rand}}$ derivation | $1{,}200{,}000$ users total, $3{,}000$ weeks, $r = 1.0$, seeds $(101, 202, 303)$ |
+| final fixture | $150{,}000$ users, $2{,}000$ weeks, $r = 0.50$, seeds $(11, 22, 33)$ |
+| recovery tolerance | $3\operatorname{SE}$ (see §11.2) |
+| calibration script commit | TBD |
 
-Also record: the naive, controlled, oracle, randomized, and oracle-randomized estimates per segment at full size, with their standard errors; and the commit hash of the calibration script that produced them.
+### 14.1 Confirmation results
+
+Per seed $(11 / 22 / 33)$:
+
+| Quantity | `price_sensitive` | `price_resilient` |
+|---|---|---|
+| removal (naive − controlled) | $1.944 / 1.631 / 1.768$ | $1.930 / 1.608 / 1.803$ |
+| paired hidden confounding | $0.546 / 0.712 / 0.630$ | $0.545 / 0.727 / 0.629$ |
+| specification effect | $-0.002 / +0.005 / +0.003$ | $-0.002 / +0.007 / +0.001$ |
+| corrected hidden confounding | $0.548 / 0.707 / 0.627$ | $0.547 / 0.719 / 0.628$ |
+| controlled $-\ \beta^{\mathrm{rand}}$ (diagnostic) | $0.719 / 0.671 / 0.255$ | $0.653 / 0.646 / 0.368$ |
+| controlled SE | $0.133 / 0.136 / 0.133$ | $0.135 / 0.134 / 0.136$ |
+| oracle SE | $0.142 / 0.144 / 0.140$ | $0.144 / 0.143 / 0.143$ |
+| randomized SE | $0.109 / 0.106 / 0.103$ | $0.103 / 0.102 / 0.101$ |
+| oracle-randomized SE | $0.108 / 0.106 / 0.103$ | $0.103 / 0.102 / 0.101$ |
+
+All three seeds pass every confirmation criterion.
+
+The diagnostic row is retained deliberately: its spread of $0.46$ against the paired estimator's $0.17$ is the evidence for §10.4.1.
 
 ---
 
@@ -548,23 +578,32 @@ Also record: the naive, controlled, oracle, randomized, and oracle-randomized es
 One row per $\texttt{candidate} \times \texttt{seed}$:
 
 ```text
-candidate_id, seed,
+candidate_id, seed, evaluation_phase,
+n_users, n_weeks, randomization_rate,
 <all swept parameters>,
 overall_conversion_rate,
-promo_rate_organic, promo_rate_affiliate, promo_rate_paid_search,
+promo_rate_{channel}, promo_rate_error_{channel},
 min_cell_promo_rate, max_cell_promo_rate, min_cell_log_price_sd,
-n_valid_cells, n_failed_overlap_cells,
-n_nonpositive_prices,
+n_valid_cells, n_failed_overlap_cells, n_ineligible_cells,
+n_nonpositive_prices, n_nonfinite_prices,
+randomized_price_corr_{demand_index|hidden_shock|week},
+randomized_price_spread_{segment|channel|tier},
 {naive|controlled|oracle|randomized|oracle_randomized}_{beta|se}_{segment},
-{naive|controlled|oracle|randomized|oracle_randomized}_error_struct_{segment},
-{naive|controlled|oracle|randomized|oracle_randomized}_error_rand_{segment},
+{...}_error_struct_{segment}, {...}_error_rand_{segment},
 {...}_standardized_error_{segment},
-randomized_target_beta_price_sensitive,
-randomized_target_beta_price_resilient,
-noncollapsibility_attenuation_price_sensitive,
-noncollapsibility_attenuation_price_resilient,
-<per-criterion pass/fail flags>, verdict
+{segment}_naive_minus_controlled,
+{segment}_controlled_minus_oracle,
+{segment}_randomized_minus_oracle_randomized,
+{segment}_corrected_hidden_confounding,
+{segment}_controlled_minus_beta_rand,
+{segment}_beta_rand_minus_beta_struct,
+randomized_target_beta_{segment}, randomized_target_se_{segment},
+randomized_target_seed_sd_{segment},
+noncollapsibility_attenuation_{segment},
+<per-criterion pass/fail flags>, passed, verdict, failures
 ```
+
+Confirmation runs write the same schema to `artifacts/dgp_confirmation.csv`.
 
 ### 15.2 `artifacts/dgp_overlap_cells.csv`
 
@@ -574,7 +613,7 @@ One row per $\texttt{candidate} \times \texttt{seed} \times \texttt{channel} \ti
 candidate_id, seed, channel, tier, demand_tercile,
 cell_population, promo_rate,
 mean_log_price_ratio, sd_log_price_ratio,
-overlap_pass, failure_reason
+overlap_eligible, overlap_pass, failure_reason
 ```
 
 This makes a failed candidate diagnosable by filtering rather than by re-running the sweep.
@@ -599,14 +638,14 @@ Both artifacts must be reproducible from the committed calibration script and it
 
 8. The naive estimate is biased upward past the signed threshold, per segment.
 9. Measured controls reduce that bias.
-10. Residual bias against the randomized target remains and is at least $2\operatorname{SE}$ from zero.
-11. The observational oracle fit recovers each $\beta^{\mathrm{struct}}$ within tolerance.
-12. The observable randomized fit recovers each frozen randomized-arm target within $2\operatorname{SE}$, with $\operatorname{SE} \leq \tau_{\mathrm{SE}}$.
-13. The oracle-randomized fit recovers each $\beta^{\mathrm{struct}}$ within $2\operatorname{SE}$, with $\operatorname{SE} \leq \tau_{\mathrm{SE}}$.
+10. The paired hidden-confounding gap is at least $0.20$ on every seed and segment.
+11. The corrected gap, net of the specification effect, is at least $0.20$ (confirmation).
+12. The observational oracle fit recovers each $\beta^{\mathrm{struct}}$ within $3\operatorname{SE}$, with $\operatorname{SE} \leq \tau_{\mathrm{SE}}$.
+13. The observable randomized fit recovers $\beta^{\mathrm{rand}}$ within $3\operatorname{SE}$ of the combined SE, and the oracle-randomized fit recovers $\beta^{\mathrm{struct}}$ within $3\operatorname{SE}$.
 
 **Robustness**
 
-14. Every criterion holds on all three calibration seeds.
+14. Every criterion holds on all three seeds.
 15. The selected candidate passes a full-size confirmation run.
 16. Separation and regression failures are recorded as failures, never silently passed.
 17. Candidates producing non-positive prices are failed before regression fitting.
@@ -619,7 +658,9 @@ Both artifacts must be reproducible from the committed calibration script and it
 
 **Documentation**
 
-21. §14 is filled in, including $\beta^{\mathrm{rand}}_s$, the attenuation per segment, $\tau_{\mathrm{overlap}}$, $\tau_{\mathrm{SE}}$, and the SE derivation behind the recovery tolerance.
+21. §14 is filled in, including $\beta^{\mathrm{rand}}_s$, the attenuation per segment, $\tau_{\mathrm{overlap}}$, $\tau_{\mathrm{SE}}$, and the reasoning behind the recovery tolerance.
 22. Both calibration artifacts are reproducible from the committed script.
+
+Items 1–17 and 21–22 are satisfied as of the confirmation run recorded in §14.1. Items 18–20 remain open: they depend on the production generator adopting the frozen constants and on the oracle/observable split being implemented and tested.
 
 Only then do the Day 2 estimators get written.

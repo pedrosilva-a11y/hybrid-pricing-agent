@@ -12,3 +12,6 @@ __pycache__/
 
 # Database
 *.duckdb
+
+# Calibration results
+artifacts/
