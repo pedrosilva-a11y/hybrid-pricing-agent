@@ -123,6 +123,18 @@ class WeeklyConditions(TypedDict):
     hidden_shock: list[float]
 
 
+class RandomizedArmAssignments(TypedDict):
+    """Column-oriented randomized experiment membership assignments.
+
+    Attributes:
+        user_id: Unique user identifier.
+        is_randomized: Whether the user belongs to the randomized pricing arm.
+    """
+
+    user_id: list[int]
+    is_randomized: list[bool]
+
+
 class WeeklyPrice(TypedDict):
     """Column-oriented synthetic weekly pricing data.
 
@@ -325,49 +337,74 @@ def generate_weekly_price(
     }
 
 
+def assign_randomized_arms(
+    config: PricingDataConfig,
+    generated_users: UserPopulation,
+) -> RandomizedArmAssignments:
+    """Assign users to the randomized pricing arm.
+
+    Args:
+        config: Generation configuration defining the randomization rate and
+            master random seed.
+        generated_users: Synthetic user population containing the users eligible
+            for randomized-arm assignment.
+
+    Results:
+        Column-oriented randomized-arm assignments containing each user identifier
+        and whether the user belongs to the randomized pricing arm.
+    """
+    n_users = len(generated_users[USER_ID_KEY])
+    n_randomized = math.ceil(config.randomization_rate * n_users)
+
+    rng = np.random.default_rng(derive_seed(config.seed, RANDOMIZED_ARM_STREAM))
+
+    randomized_indices = set(
+        rng.choice(n_users, size=n_randomized, replace=False).tolist()
+    )
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        IS_RANDOMIZED_KEY: [index in randomized_indices for index in range(n_users)],
+    }
+
+
 def assign_user_prices(
     config: PricingDataConfig,
     generated_users: UserPopulation,
     weekly_price: WeeklyPrice,
+    randomized_arms: RandomizedArmAssignments,
 ) -> AssignedUserPrices:
     """Assign observed prices to synthetic users.
 
     Args:
-        config: Generation configuration defining randomization rate and seed.
+        config: Generation configuration containing the master random seed.
         generated_users: Synthetic user population containing signup weeks.
         weekly_price: Weekly pricing data containing one policy price per week.
+        randomized_arms: User-level randomized pricing arm assignments.
 
     Returns:
         Column-oriented user pricing data containing each user's observed price and
         whether the price was assigned through randomization.
     """
-    n_users = len(generated_users[USER_ID_KEY])
-    n_randomized = math.ceil(config.randomization_rate * n_users)
-
     rng = random.Random(derive_seed(config.seed, PRICE_ASSIGNMENT_STREAM))
 
-    randomized_indices = set(rng.sample(range(n_users), k=n_randomized))
-
     observed_prices: list[float] = []
-    is_randomized: list[bool] = []
 
-    for index in range(n_users):
-        if index in randomized_indices:
+    for index, randomized in enumerate(randomized_arms[IS_RANDOMIZED_KEY]):
+        if randomized:
             price_multiplier = rng.choice(EXPERIMENTAL_PRICE_MULTIPLIERS)
             observed_price = round(REFERENCE_PRICE * price_multiplier, 2)
-            randomized = True
+
         else:
             signup_week = generated_users[SIGNUP_WEEK_KEY][index]
             observed_price = weekly_price[PRICE_KEY][signup_week]
-            randomized = False
 
         observed_prices.append(observed_price)
-        is_randomized.append(randomized)
 
     return {
         USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
         OBSERVED_PRICE_KEY: observed_prices,
-        IS_RANDOMIZED_KEY: is_randomized,
+        IS_RANDOMIZED_KEY: randomized_arms[IS_RANDOMIZED_KEY].copy(),
     }
 
 

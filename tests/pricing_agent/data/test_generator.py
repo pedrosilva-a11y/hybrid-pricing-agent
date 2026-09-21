@@ -52,6 +52,7 @@ from pricing_agent.data.generator import (
     WeeklyConditions,
     assign_acquisition_costs,
     assign_marginal_costs,
+    assign_randomized_arms,
     assign_user_prices,
     calculate_churn_probabilities,
     calculate_conversion_probabilities,
@@ -234,6 +235,57 @@ def test_generate_expected_weekly_conditions_for_frozen_seed(
     )
 
 
+# Randomized arm assignment
+
+
+def test_assign_exact_number_of_users_to_randomized_arm(
+    config: PricingDataConfig,
+) -> None:
+    """Assign exactly the configured number of users to the randomized arm."""
+    users = generate_users(config)
+
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users)
+
+    expected_count = math.ceil(config.randomization_rate * config.n_users)
+
+    assert randomized_arms[USER_ID_KEY] == users[USER_ID_KEY]
+    assert sum(randomized_arms[IS_RANDOMIZED_KEY]) == expected_count
+
+
+def test_reproduce_randomized_arm_assignments_with_same_seed(
+    config: PricingDataConfig,
+) -> None:
+    """Reproduce identical randomized-arm assignments with the same seed."""
+    users = generate_users(config)
+
+    assignments_1 = assign_randomized_arms(config=config, generated_users=users)
+    assignments_2 = assign_randomized_arms(config=config, generated_users=users)
+
+    assert assignments_1 == assignments_2
+
+
+def test_assign_expected_randomized_arm_for_frozen_seed(
+    config: PricingDataConfig,
+) -> None:
+    """Assign stable randomized-arm membership for the frozen random stream."""
+    users = generate_users(config)
+
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users)
+
+    assert randomized_arms[IS_RANDOMIZED_KEY] == [
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        True,
+    ]
+
+
 # Price assignment
 
 
@@ -251,11 +303,16 @@ def test_assign_user_observed_prices_without_randomization(
     users_info = generate_users(no_randomization_config)
     weekly_conditions = generate_weekly_conditions(no_randomization_config)
     weekly_price = generate_weekly_price(weekly_conditions)
+    randomized_arms = assign_randomized_arms(
+        config=no_randomization_config,
+        generated_users=users_info,
+    )
 
     assigned_prices = assign_user_prices(
         config=no_randomization_config,
         generated_users=users_info,
         weekly_price=weekly_price,
+        randomized_arms=randomized_arms,
     )
 
     assert assigned_prices[USER_ID_KEY] == users_info[USER_ID_KEY]
@@ -277,11 +334,13 @@ def test_assign_expected_number_of_randomized_user_prices(
     users_info = generate_users(config)
     weekly_conditions = generate_weekly_conditions(config)
     weekly_price = generate_weekly_price(weekly_conditions)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_price=weekly_price,
+        randomized_arms=randomized_arms,
     )
 
     expected_randomized_users = math.ceil(config.randomization_rate * config.n_users)
@@ -298,17 +357,20 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
     users_info = generate_users(config)
     weekly_conditions = generate_weekly_conditions(config)
     weekly_price = generate_weekly_price(weekly_conditions)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices_1 = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_price=weekly_price,
+        randomized_arms=randomized_arms,
     )
 
     assigned_prices_2 = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_price=weekly_price,
+        randomized_arms=randomized_arms,
     )
 
     assert assigned_prices_1 == assigned_prices_2
@@ -495,11 +557,13 @@ def test_generate_valid_conversion_probabilities_for_all_users(
     users_info = generate_users(config)
     weekly_conditions = generate_weekly_conditions(config)
     weekly_price = generate_weekly_price(weekly_conditions)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_price=weekly_price,
+        randomized_arms=randomized_arms,
     )
 
     conversion_probabilities = calculate_conversion_probabilities(

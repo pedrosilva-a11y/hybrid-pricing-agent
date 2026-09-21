@@ -16,6 +16,7 @@ from pricing_agent.data.generator import (
     WeeklyPrice,
     assign_acquisition_costs,
     assign_marginal_costs,
+    assign_randomized_arms,
     assign_user_prices,
     calculate_churn_probabilities,
     calculate_conversion_probabilities,
@@ -70,10 +71,13 @@ def run_pipeline(config: PricingDataConfig) -> PipelineOutput:
 
     weekly_price = generate_weekly_price(weekly_conditions)
 
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
+
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_price=weekly_price,
+        randomized_arms=randomized_arms,
     )
 
     conversion_probabilities = calculate_conversion_probabilities(
