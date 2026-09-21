@@ -7,6 +7,9 @@ import pytest
 
 from pricing_agent.data.config import (
     ACQUISITION_CHANNELS,
+    DEMAND_HIGH_BOUND,
+    DEMAND_LOW_BOUND,
+    DEMAND_MEAN,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
     SegmentConfig,
@@ -21,10 +24,7 @@ from pricing_agent.data.generator import (
     CONVERSION_OUTCOME_KEY,
     CONVERSION_OUTCOME_STREAM,
     CONVERSION_PROB_KEY,
-    DEMAND_HIGH_BOUND,
     DEMAND_INDEX_KEY,
-    DEMAND_LOW_BOUND,
-    DEMAND_MEAN,
     HIDDEN_SHOCK_STREAM,
     IS_RANDOMIZED_KEY,
     MARGINAL_COST_KEY,
@@ -212,6 +212,23 @@ def test_calculate_expected_policy_prices() -> None:
     weekly_prices = generate_weekly_price(weekly_demand)
 
     assert weekly_prices[PRICE_KEY] == [17.99, 19.99, 21.99]
+
+
+def test_generate_expected_weekly_demand_for_frozen_seed(
+    config: PricingDataConfig,
+) -> None:
+    """Generate stable weekly demand values for the frozen random stream."""
+    weekly_demand = generate_weekly_demand(config)
+
+    assert weekly_demand[WEEK_KEY] == [0, 1, 2, 3]
+    assert weekly_demand[DEMAND_INDEX_KEY] == pytest.approx(
+        [
+            1.0054461180,
+            0.8781068864,
+            1.0137059806,
+            1.1192886592,
+        ]
+    )
 
 
 # Price assignment

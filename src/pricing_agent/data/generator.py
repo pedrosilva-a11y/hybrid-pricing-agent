@@ -9,6 +9,10 @@ from numpy.random import SeedSequence
 
 from pricing_agent.data.config import (
     ACQUISITION_CHANNELS,
+    DEMAND_HIGH_BOUND,
+    DEMAND_LOW_BOUND,
+    DEMAND_MEAN,
+    DEMAND_STD_DEV,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
 )
@@ -33,11 +37,7 @@ USER_ID_KEY: Final = "user_id"
 
 # Weekly Demand Global Variables
 DEMAND_INDEX_KEY: Final = "demand_index"
-DEMAND_HIGH_BOUND: Final = 1.25
-DEMAND_LOW_BOUND: Final = 0.75
-DEMAND_MEAN: Final = 1.0
 # Generates a moderate spread (~99.7% of values fall between 0.76 and 1.24)
-DEMAND_STD_DEV: Final = 0.08
 WEEK_KEY: Final = "week"
 
 # Weekly Price Global Variables
