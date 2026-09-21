@@ -7,7 +7,7 @@ from pricing_agent.data.db.database import connect_database, initialize_database
 EXPECTED_TABLES = {
     "weekly_conditions",
     "users",
-    "weekly_price",
+    "weekly_base_prices",
     "assigned_prices",
     "conversion_probabilities",
     "conversion_outcomes",

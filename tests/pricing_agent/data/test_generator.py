@@ -59,8 +59,8 @@ from pricing_agent.data.generator import (
     calculate_conversion_probabilities,
     derive_seed,
     generate_users,
+    generate_weekly_base_prices,
     generate_weekly_conditions,
-    generate_weekly_price,
     sample_churn_outcomes,
     sample_conversions,
 )
@@ -180,43 +180,50 @@ def test_reproduce_identical_weekly_conditions_with_same_seed(
 # Weekly Price
 
 
-def test_generate_weekly_policy_prices(config: PricingDataConfig) -> None:
-    """Create weekly policy prices as synthetic data."""
+def test_generate_weekly_base_prices(config: PricingDataConfig) -> None:
+    """Create tier-specific weekly base prices as synthetic data."""
     weekly_conditions = generate_weekly_conditions(config)
-    weekly_prices = generate_weekly_price(weekly_conditions=weekly_conditions)
-
-    assert weekly_prices[WEEK_KEY] == list(range(config.n_weeks))
-
-    for demand_index, price in zip(
-        weekly_conditions[DEMAND_INDEX_KEY],
-        weekly_prices[PRICE_KEY],
-        strict=True,
-    ):
-        if demand_index < DEMAND_MEAN:
-            assert price < REFERENCE_PRICE
-        elif demand_index > DEMAND_MEAN:
-            assert price > REFERENCE_PRICE
-        else:
-            assert price == REFERENCE_PRICE
-
-    assert (
-        len(weekly_prices[WEEK_KEY]) == len(weekly_prices[PRICE_KEY]) == config.n_weeks
+    weekly_base_prices = generate_weekly_base_prices(
+        weekly_conditions=weekly_conditions,
     )
 
-    assert all(price > 0 for price in weekly_prices[PRICE_KEY])
+    assert len(weekly_base_prices[WEEK_KEY]) == config.n_weeks * len(SUBSCRIPTION_TIERS)
+
+    assert weekly_base_prices[WEEK_KEY] == [
+        week for week in range(config.n_weeks) for _ in SUBSCRIPTION_TIERS
+    ]
+    assert weekly_base_prices[TIER_KEY] == list(SUBSCRIPTION_TIERS) * config.n_weeks
 
 
-def test_calculate_expected_policy_prices() -> None:
-    """Calculate expected prices for known demand conditions."""
+def test_calculate_expected_base_prices() -> None:
+    """Calculate expected tier-specific base prices for known conditions."""
     weekly_conditions: WeeklyConditions = {
         WEEK_KEY: [0, 1, 2],
         DEMAND_INDEX_KEY: [0.75, 1.0, 1.25],
         HIDDEN_SHOCK_KEY: [0.0, 0.0, 0.0],
     }
 
-    weekly_prices = generate_weekly_price(weekly_conditions)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
 
-    assert weekly_prices[PRICE_KEY] == [17.99, 19.99, 21.99]
+    assert weekly_base_prices[WEEK_KEY] == [0, 0, 1, 1, 2, 2]
+    assert weekly_base_prices[TIER_KEY] == [
+        "basic",
+        "premium",
+        "basic",
+        "premium",
+        "basic",
+        "premium",
+    ]
+    assert weekly_base_prices[PRICE_KEY] == pytest.approx(
+        [
+            18.9905,
+            28.4905,
+            19.99,
+            29.99,
+            20.9895,
+            31.4895,
+        ]
+    )
 
 
 def test_generate_expected_weekly_conditions_for_frozen_seed(
@@ -331,7 +338,7 @@ def test_assign_user_observed_prices_without_randomization(
     )
     users_info = generate_users(no_randomization_config)
     weekly_conditions = generate_weekly_conditions(no_randomization_config)
-    weekly_price = generate_weekly_price(weekly_conditions)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(
         config=no_randomization_config,
         generated_users=users_info,
@@ -340,7 +347,7 @@ def test_assign_user_observed_prices_without_randomization(
     assigned_prices = assign_user_prices(
         config=no_randomization_config,
         generated_users=users_info,
-        weekly_price=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
     )
 
@@ -349,10 +356,21 @@ def test_assign_user_observed_prices_without_randomization(
     assert len(assigned_prices[IS_RANDOMIZED_KEY]) == no_randomization_config.n_users
     assert not any(assigned_prices[IS_RANDOMIZED_KEY])
 
+    price_by_week_and_tier = {
+        (week, tier): price
+        for week, tier, price in zip(
+            weekly_base_prices[WEEK_KEY],
+            weekly_base_prices[TIER_KEY],
+            weekly_base_prices[PRICE_KEY],
+            strict=True,
+        )
+    }
+
     for index, signup_week in enumerate(users_info[SIGNUP_WEEK_KEY]):
-        assert (
-            assigned_prices[OBSERVED_PRICE_KEY][index]
-            == weekly_price[PRICE_KEY][signup_week]
+        tier = users_info[TIER_KEY][index]
+
+        assert assigned_prices[OBSERVED_PRICE_KEY][index] == pytest.approx(
+            price_by_week_and_tier[(signup_week, tier)]
         )
 
 
@@ -362,13 +380,13 @@ def test_assign_expected_number_of_randomized_user_prices(
     """Randomize the expected number of user price assignments."""
     users_info = generate_users(config)
     weekly_conditions = generate_weekly_conditions(config)
-    weekly_price = generate_weekly_price(weekly_conditions)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
-        weekly_price=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
     )
 
@@ -385,20 +403,20 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
     """Reproduce identical user price assignments when using the same seed."""
     users_info = generate_users(config)
     weekly_conditions = generate_weekly_conditions(config)
-    weekly_price = generate_weekly_price(weekly_conditions)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices_1 = assign_user_prices(
         config=config,
         generated_users=users_info,
-        weekly_price=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
     )
 
     assigned_prices_2 = assign_user_prices(
         config=config,
         generated_users=users_info,
-        weekly_price=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
     )
 
@@ -585,13 +603,13 @@ def test_generate_valid_conversion_probabilities_for_all_users(
     """Generate a valid conversion probability for each synthetic user."""
     users_info = generate_users(config)
     weekly_conditions = generate_weekly_conditions(config)
-    weekly_price = generate_weekly_price(weekly_conditions)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
-        weekly_price=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
     )
 

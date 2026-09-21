@@ -74,12 +74,14 @@ def load_pipeline_output(
 
         _insert_rows(
             connection,
-            table="weekly_price",
-            columns=("week", "price"),
+            table="weekly_base_prices",
+            columns=("week", "tier", "price"),
             values=list(
                 zip(
-                    output["weekly_prices"]["week"],
-                    output["weekly_prices"]["price"],
+                    output["weekly_base_prices"]["week"],
+                    output["weekly_base_prices"]["tier"],
+                    output["weekly_base_prices"]["price"],
+                    strict=True,
                 )
             ),
         )

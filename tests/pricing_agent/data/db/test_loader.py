@@ -5,7 +5,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from pricing_agent.data.config import PricingDataConfig, build_pricing_data_config
+from pricing_agent.data.config import (
+    SUBSCRIPTION_TIERS,
+    PricingDataConfig,
+    build_pricing_data_config,
+)
 from pricing_agent.data.db.database import connect_database, initialize_database
 from pricing_agent.data.db.loader import load_pipeline_output
 from pricing_agent.data.pipeline import run_pipeline
@@ -39,7 +43,7 @@ def test_load_pipeline_output_populates_all_tables(
         expected_counts = {
             "weekly_conditions": config.n_weeks,
             "users": config.n_users,
-            "weekly_price": config.n_weeks,
+            "weekly_base_prices": config.n_weeks * len(SUBSCRIPTION_TIERS),
             "assigned_prices": config.n_users,
             "conversion_probabilities": config.n_users,
             "conversion_outcomes": config.n_users,

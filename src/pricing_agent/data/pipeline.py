@@ -12,8 +12,8 @@ from pricing_agent.data.generator import (
     UserAcquisitionCosts,
     UserMarginalCosts,
     UserPopulation,
+    WeeklyBasePrices,
     WeeklyConditions,
-    WeeklyPrice,
     assign_acquisition_costs,
     assign_marginal_costs,
     assign_randomized_arms,
@@ -21,8 +21,8 @@ from pricing_agent.data.generator import (
     calculate_churn_probabilities,
     calculate_conversion_probabilities,
     generate_users,
+    generate_weekly_base_prices,
     generate_weekly_conditions,
-    generate_weekly_price,
     sample_churn_outcomes,
     sample_conversions,
 )
@@ -33,9 +33,12 @@ class PipelineOutput(TypedDict):
 
     Attributes:
         users: Generated synthetic user population.
-        weekly_conditions: Simulated weekly market conditions.
-        weekly_prices: Weekly policy prices derived from market demand.
-        assigned_prices: User-level observed price assignments.
+        weekly_conditions: Simulated weekly market conditions containing observed
+            demand and the latent market shock.
+        weekly_base_prices: Tier-specific weekly base prices implied by the
+            calibrated historical pricing policy.
+        assigned_prices: User-level observed price assignments after applying
+            historical or randomized pricing logic.
         conversion_probabilities: User-level conversion probabilities.
         conversion_outcomes: Sampled user conversion outcomes.
         acquisition_costs: User-level acquisition costs.
@@ -46,7 +49,7 @@ class PipelineOutput(TypedDict):
 
     users: UserPopulation
     weekly_conditions: WeeklyConditions
-    weekly_prices: WeeklyPrice
+    weekly_base_prices: WeeklyBasePrices
     assigned_prices: AssignedUserPrices
     conversion_probabilities: ConversionProbabilities
     conversion_outcomes: ConversionOutcomes
@@ -69,14 +72,14 @@ def run_pipeline(config: PricingDataConfig) -> PipelineOutput:
 
     weekly_conditions = generate_weekly_conditions(config)
 
-    weekly_price = generate_weekly_price(weekly_conditions)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
 
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
-        weekly_price=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
     )
 
@@ -111,7 +114,7 @@ def run_pipeline(config: PricingDataConfig) -> PipelineOutput:
     return PipelineOutput(
         users=users_info,
         weekly_conditions=weekly_conditions,
-        weekly_prices=weekly_price,
+        weekly_base_prices=weekly_base_prices,
         assigned_prices=assigned_prices,
         conversion_probabilities=conversion_probabilities,
         conversion_outcomes=sampled_conversions,

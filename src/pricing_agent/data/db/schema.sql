@@ -46,20 +46,26 @@ CREATE TABLE users (
 );
 
 /*
-Weekly synthetic policy price.
+Tier-specific weekly synthetic base prices.
 
-    week: Unique week index in the simulated period.
-    price: Policy price offered during the week, derived from the reference price
-        and the week's demand condition.
+    week: Week associated with the generated base price.
+    tier: Subscription tier determining the reference price.
+    price: Historical base price implied by the weekly market conditions.
 */
-CREATE TABLE weekly_price (
-    week INTEGER PRIMARY KEY NOT NULL,
-    price DECIMAL(10, 2) NOT NULL,
+CREATE TABLE weekly_base_prices (
+    week INTEGER NOT NULL,
+    tier TEXT NOT NULL CHECK (
+        tier IN ('basic', 'premium')
+    ),
+    price DOUBLE NOT NULL,
 
-    CONSTRAINT check_weekly_price_positivity
+    CONSTRAINT pk_weekly_base_prices
+        PRIMARY KEY (week, tier),
+
+    CONSTRAINT check_weekly_base_price_positivity
         CHECK (price > 0),
 
-    CONSTRAINT fk_weekly_price_week
+    CONSTRAINT fk_weekly_base_prices_week
         FOREIGN KEY (week) REFERENCES weekly_conditions(week)
 );
 
@@ -68,8 +74,9 @@ Assigned synthetic user-level prices.
 
     user_id: Unique user identifier.
     observed_price: Price assigned to the user. For non-randomized users, this
-        matches the policy price for the user's signup week. For randomized users,
-        this is assigned independently of the weekly pricing policy.
+        matches the tier-specific base price for the user's signup week. For
+        randomized users, this is assigned independently of the historical
+        pricing policy.
     is_randomized: Whether the user's observed price was assigned through the
         randomized pricing experiment.
 */

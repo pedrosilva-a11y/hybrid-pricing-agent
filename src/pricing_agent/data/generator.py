@@ -45,14 +45,13 @@ DEMAND_INDEX_KEY: Final = "demand_index"
 HIDDEN_SHOCK_KEY: Final = "hidden_shock"
 WEEK_KEY: Final = "week"
 
-# Weekly Price Global Variables
+# Weekly Base Prices Global Variables
 PRICE_KEY: Final = "price"
 REFERENCE_PRICE: Final = 19.99
 
 # Assign User Prices Global Variables
 EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
 IS_RANDOMIZED_KEY: Final = "is_randomized"
-LEGACY_PRICE_DEMAND_SENSITIVITY: Final = 0.4
 OBSERVED_PRICE_KEY: Final = "observed_price"
 
 # Conversion Probabilities Global Variables
@@ -138,16 +137,17 @@ class RandomizedArmAssignments(TypedDict):
     is_randomized: list[bool]
 
 
-class WeeklyPrice(TypedDict):
-    """Column-oriented synthetic weekly pricing data.
+class WeeklyBasePrices(TypedDict):
+    """Column-oriented weekly base prices by subscription tier.
 
     Attributes:
-        week: Unique week index in the simulated period.
-        price: Policy price offered during the week, derived from the reference price
-            and the week's demand condition.
+        week: Week associated with the generated base price.
+        tier: Subscription tier determining the reference price.
+        price: Historical base price implied by the weekly market conditions.
     """
 
     week: list[int]
+    tier: list[str]
     price: list[float]
 
 
@@ -157,8 +157,9 @@ class AssignedUserPrices(TypedDict):
     Attributes:
         user_id: Unique user identifier.
         observed_price: Price assigned to the user. For non-randomized users, this
-            matches the policy price for the user's signup week. For randomized users,
-            this is assigned independently of the weekly pricing policy.
+            matches th tier-specific base price for the user's signup week. For
+            randomized users, this is assigned independently of the historical
+            pricing policy.
         is_randomized: Whether the user's observed price was assigned through the
             randomized pricing experiment.
     """
@@ -313,33 +314,6 @@ def generate_weekly_conditions(config: PricingDataConfig) -> WeeklyConditions:
     }
 
 
-def generate_weekly_price(
-    weekly_conditions: WeeklyConditions,
-) -> WeeklyPrice:
-    """Generate weekly policy prices from simulated market conditions.
-
-    Args:
-        weekly_conditions: Weekly market conditions containing observed demand and
-            latent market shocks.
-
-    Returns:
-        Column-oriented weekly pricing data containing one policy price per week.
-    """
-    prices = [
-        round(
-            REFERENCE_PRICE
-            * (1.0 + LEGACY_PRICE_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)),
-            2,
-        )
-        for demand_index in weekly_conditions[DEMAND_INDEX_KEY]
-    ]
-
-    return {
-        WEEK_KEY: weekly_conditions[WEEK_KEY].copy(),
-        PRICE_KEY: prices,
-    }
-
-
 def calculate_base_price(tier: str, demand_index: float, hidden_shock: float) -> float:
     """Calculate the historical base price for a tier and weekly conditions.
 
@@ -360,6 +334,46 @@ def calculate_base_price(tier: str, demand_index: float, hidden_shock: float) ->
     )
 
 
+def generate_weekly_base_prices(
+    weekly_conditions: WeeklyConditions,
+) -> WeeklyBasePrices:
+    """Generate tier-specific weekly base prices.
+
+    Args:
+        weekly_conditions: Weekly market conditions containing observed demand and
+            latent market shocks.
+
+    Returns:
+        Column-oriented weekly base prices containing one price per week and tier.
+    """
+    weeks: list[int] = []
+    tiers: list[str] = []
+    base_prices: list[float] = []
+
+    for week, demand_index, hidden_shock in zip(
+        weekly_conditions[WEEK_KEY],
+        weekly_conditions[DEMAND_INDEX_KEY],
+        weekly_conditions[HIDDEN_SHOCK_KEY],
+        strict=True,
+    ):
+        for tier in SUBSCRIPTION_TIERS:
+            weeks.append(week)
+            tiers.append(tier)
+            base_prices.append(
+                calculate_base_price(
+                    tier=tier,
+                    demand_index=demand_index,
+                    hidden_shock=hidden_shock,
+                )
+            )
+
+    return {
+        WEEK_KEY: weeks,
+        TIER_KEY: tiers,
+        PRICE_KEY: base_prices,
+    }
+
+
 def assign_randomized_arms(
     config: PricingDataConfig,
     generated_users: UserPopulation,
@@ -372,7 +386,7 @@ def assign_randomized_arms(
         generated_users: Synthetic user population containing the users eligible
             for randomized-arm assignment.
 
-    Results:
+    Returns:
         Column-oriented randomized-arm assignments containing each user identifier
         and whether the user belongs to the randomized pricing arm.
     """
@@ -394,15 +408,17 @@ def assign_randomized_arms(
 def assign_user_prices(
     config: PricingDataConfig,
     generated_users: UserPopulation,
-    weekly_price: WeeklyPrice,
+    weekly_base_prices: WeeklyBasePrices,
     randomized_arms: RandomizedArmAssignments,
 ) -> AssignedUserPrices:
     """Assign observed prices to synthetic users.
 
     Args:
         config: Generation configuration containing the master random seed.
-        generated_users: Synthetic user population containing signup weeks.
-        weekly_price: Weekly pricing data containing one policy price per week.
+        generated_users: Synthetic user population containing signup weeks and
+            subscription tiers.
+        weekly_base_prices: Tier-specific weekly base prices generated from the
+            simulated market conditions.
         randomized_arms: User-level randomized pricing arm assignments.
 
     Returns:
@@ -411,16 +427,28 @@ def assign_user_prices(
     """
     rng = random.Random(derive_seed(config.seed, PRICE_ASSIGNMENT_STREAM))
 
+    price_by_week_and_tier = {
+        (week, tier): price
+        for week, tier, price in zip(
+            weekly_base_prices[WEEK_KEY],
+            weekly_base_prices[TIER_KEY],
+            weekly_base_prices[PRICE_KEY],
+            strict=True,
+        )
+    }
+
     observed_prices: list[float] = []
 
     for index, randomized in enumerate(randomized_arms[IS_RANDOMIZED_KEY]):
+        signup_week = generated_users[SIGNUP_WEEK_KEY][index]
+        tier = generated_users[TIER_KEY][index]
+
         if randomized:
             price_multiplier = rng.choice(EXPERIMENTAL_PRICE_MULTIPLIERS)
-            observed_price = round(REFERENCE_PRICE * price_multiplier, 2)
+            observed_price = round(REFERENCE_PRICE_BY_TIER[tier] * price_multiplier, 2)
 
         else:
-            signup_week = generated_users[SIGNUP_WEEK_KEY][index]
-            observed_price = weekly_price[PRICE_KEY][signup_week]
+            observed_price = price_by_week_and_tier[(signup_week, tier)]
 
         observed_prices.append(observed_price)
 
