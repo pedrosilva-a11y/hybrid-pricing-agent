@@ -1,15 +1,19 @@
 """Tests for synthetic pricing data generation."""
 
 import math
+from dataclasses import replace
 
 import pytest
 
-from pricing_agent.data.config import PricingDataConfig, SegmentConfig
+from pricing_agent.data.config import (
+    ACQUISITION_CHANNELS,
+    SUBSCRIPTION_TIERS,
+    PricingDataConfig,
+    SegmentConfig,
+)
 from pricing_agent.data.generator import (
     ACQ_COST_MAPPING,
     ACQUISITION_COST_KEY,
-    ALLOWED_ACQUISITION_CHANNELS,
-    ALLOWED_SUBSCRIPTION_TIERS,
     CHANNEL_KEY,
     CHURN_OUTCOME_KEY,
     CHURN_OUTCOME_STREAM,
@@ -113,9 +117,9 @@ def test_generate_users_information(
     )
     assert generated_segments <= configured_segments
     assert len(users_info[CHANNEL_KEY]) == n_users
-    assert set(users_info[CHANNEL_KEY]) <= set(ALLOWED_ACQUISITION_CHANNELS)
+    assert set(users_info[CHANNEL_KEY]) <= set(ACQUISITION_CHANNELS)
     assert len(users_info[TIER_KEY]) == n_users
-    assert set(users_info[TIER_KEY]) <= set(ALLOWED_SUBSCRIPTION_TIERS)
+    assert set(users_info[TIER_KEY]) <= set(SUBSCRIPTION_TIERS)
 
 
 def test_reproduce_identical_users_with_same_seed(
@@ -126,6 +130,18 @@ def test_reproduce_identical_users_with_same_seed(
     users_info_2 = generate_users(config)
 
     assert users_info_1 == users_info_2
+
+
+def test_generate_different_users_with_different_seeds(
+    config: PricingDataConfig,
+) -> None:
+    """Generate different populations when using different master seeds."""
+    different_seed_config = replace(config, seed=config.seed + 1)
+
+    users_1 = generate_users(config)
+    users_2 = generate_users(different_seed_config)
+
+    users_1 != users_2
 
 
 # Weekly Demand

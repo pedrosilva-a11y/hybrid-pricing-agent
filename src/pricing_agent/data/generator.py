@@ -7,7 +7,11 @@ from typing import Final, TypedDict
 import numpy as np
 from numpy.random import SeedSequence
 
-from pricing_agent.data.config import PricingDataConfig
+from pricing_agent.data.config import (
+    ACQUISITION_CHANNELS,
+    SUBSCRIPTION_TIERS,
+    PricingDataConfig,
+)
 
 # Random stream identifiers
 USER_GENERATION_STREAM: Final = 0
@@ -21,8 +25,6 @@ PROMO_DEPTH_STREAM: Final = 7
 RANDOMIZED_ARM_STREAM: Final = 8
 
 # User Population Global Variables
-ALLOWED_ACQUISITION_CHANNELS: Final = ("organic", "paid_search", "affiliate")
-ALLOWED_SUBSCRIPTION_TIERS: Final = ("basic", "premium")
 CHANNEL_KEY: Final = "channel"
 SEGMENT_KEY: Final = "segment"
 SIGNUP_WEEK_KEY: Final = "signup_week"
@@ -237,7 +239,7 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
     Returns:
         Mapping of user attributes to their generated column values.
     """
-    rng = random.Random(derive_seed(config.seed, USER_GENERATION_STREAM))
+    rng = np.random.default_rng(derive_seed(config.seed, USER_GENERATION_STREAM))
 
     synthetic_data: UserPopulation = {
         USER_ID_KEY: [],
@@ -251,10 +253,10 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
 
     for user_id in range(config.n_users):
         synthetic_data[USER_ID_KEY].append(user_id)
-        synthetic_data[SIGNUP_WEEK_KEY].append(rng.randrange(config.n_weeks))
+        synthetic_data[SIGNUP_WEEK_KEY].append(int(rng.integers(config.n_weeks)))
         synthetic_data[SEGMENT_KEY].append(rng.choice(segment_names))
-        synthetic_data[CHANNEL_KEY].append(rng.choice(ALLOWED_ACQUISITION_CHANNELS))
-        synthetic_data[TIER_KEY].append(rng.choice(ALLOWED_SUBSCRIPTION_TIERS))
+        synthetic_data[CHANNEL_KEY].append(rng.choice(ACQUISITION_CHANNELS))
+        synthetic_data[TIER_KEY].append(rng.choice(SUBSCRIPTION_TIERS))
 
     return synthetic_data
 
