@@ -9,12 +9,16 @@ from numpy.random import SeedSequence
 
 from pricing_agent.data.config import PricingDataConfig
 
-# Random Stream Identifiers
+# Random stream identifiers
 USER_GENERATION_STREAM: Final = 0
 WEEKLY_DEMAND_STREAM: Final = 1
 PRICE_ASSIGNMENT_STREAM: Final = 2
 CONVERSION_OUTCOME_STREAM: Final = 3
-CHURN_OUTCOME_STREAM: Final = 4
+CHURN_OUTCOME_STREAM: Final = 4  # Legacy / reserved
+HIDDEN_SHOCK_STREAM: Final = 5
+PROMO_ASSIGNMENT_STREAM: Final = 6
+PROMO_DEPTH_STREAM: Final = 7
+RANDOMIZED_ARM_STREAM: Final = 8
 
 # User Population Global Variables
 ALLOWED_ACQUISITION_CHANNELS: Final = ("organic", "paid_search", "affiliate")

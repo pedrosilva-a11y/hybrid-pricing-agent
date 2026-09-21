@@ -12,24 +12,33 @@ from pricing_agent.data.generator import (
     ALLOWED_SUBSCRIPTION_TIERS,
     CHANNEL_KEY,
     CHURN_OUTCOME_KEY,
+    CHURN_OUTCOME_STREAM,
     CHURN_PROB_KEY,
     CONVERSION_OUTCOME_KEY,
+    CONVERSION_OUTCOME_STREAM,
     CONVERSION_PROB_KEY,
     DEMAND_HIGH_BOUND,
     DEMAND_INDEX_KEY,
     DEMAND_LOW_BOUND,
     DEMAND_MEAN,
+    HIDDEN_SHOCK_STREAM,
     IS_RANDOMIZED_KEY,
     MARGINAL_COST_KEY,
     OBSERVED_PRICE_KEY,
+    PRICE_ASSIGNMENT_STREAM,
     PRICE_KEY,
+    PROMO_ASSIGNMENT_STREAM,
+    PROMO_DEPTH_STREAM,
+    RANDOMIZED_ARM_STREAM,
     REFERENCE_PRICE,
     SEGMENT_KEY,
     SIGNUP_WEEK_KEY,
     TIER_KEY,
     TIER_MARGINAL_COST_MAPPING,
+    USER_GENERATION_STREAM,
     USER_ID_KEY,
     WEEK_KEY,
+    WEEKLY_DEMAND_STREAM,
     AssignedUserPrices,
     ChurnProbabilities,
     ConversionOutcomes,
@@ -41,6 +50,7 @@ from pricing_agent.data.generator import (
     assign_user_prices,
     calculate_churn_probabilities,
     calculate_conversion_probabilities,
+    derive_seed,
     generate_users,
     generate_weekly_demand,
     generate_weekly_price,
@@ -1038,3 +1048,38 @@ def test_reproduce_identical_churn_outcomes_with_same_seed() -> None:
     )
 
     assert sampled_churns_1 == sampled_churns_2
+
+
+# Random stream contract
+
+
+def test_define_frozen_random_stream_identifiers() -> None:
+    """Keep random stream identifiers stable after DGP calibration."""
+    assert USER_GENERATION_STREAM == 0
+    assert WEEKLY_DEMAND_STREAM == 1
+    assert PRICE_ASSIGNMENT_STREAM == 2
+    assert CONVERSION_OUTCOME_STREAM == 3
+    assert CHURN_OUTCOME_STREAM == 4
+    assert HIDDEN_SHOCK_STREAM == 5
+    assert PROMO_ASSIGNMENT_STREAM == 6
+    assert PROMO_DEPTH_STREAM == 7
+    assert RANDOMIZED_ARM_STREAM == 8
+
+
+def test_derive_frozen_seed_for_each_random_stream() -> None:
+    """Derive stable independent seeds from the frozen stream identifiers."""
+    expected_seeds = {
+        0: 3444837047,
+        1: 3329053876,
+        2: 955475868,
+        3: 2541583436,
+        4: 964687612,
+        5: 2103693821,
+        6: 709256125,
+        7: 1955881634,
+        8: 3117874100,
+    }
+
+    assert {
+        stream: derive_seed(42, stream) for stream in expected_seeds
+    } == expected_seeds
