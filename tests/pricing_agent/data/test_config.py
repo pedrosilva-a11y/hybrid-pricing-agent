@@ -3,6 +3,28 @@
 import pytest
 
 from pricing_agent.data.config import (
+    ACQUISITION_CHANNELS,
+    BASELINE_CONVERSION_BY_SEGMENT,
+    CHANNEL_CONVERSION_EFFECT_BY_CHANNEL,
+    DEMAND_CONVERSION_SENSITIVITY,
+    DEMAND_HIGH_BOUND,
+    DEMAND_LOW_BOUND,
+    DEMAND_MEAN,
+    DEMAND_STD_DEV,
+    HIDDEN_SHOCK_MEAN,
+    HIDDEN_SHOCK_STD_DEV,
+    PRICE_DEMAND_SENSITIVITY,
+    PRICE_SHOCK_SENSITIVITY,
+    PROMO_BIAS_BY_CHANNEL,
+    PROMO_DEMAND_SENSITIVITY,
+    PROMO_DEPTHS,
+    PROMO_SHOCK_SENSITIVITY,
+    RANDOMIZED_PRICE_MULTIPLIERS,
+    REFERENCE_PRICE_BY_TIER,
+    SEGMENTS,
+    SHOCK_CONVERSION_SENSITIVITY,
+    STRUCTURAL_BETA_BY_SEGMENT,
+    SUBSCRIPTION_TIERS,
     PricingDataConfig,
     SegmentConfig,
     build_pricing_data_config,
@@ -293,3 +315,61 @@ def test_build_pricing_data_config_with_default_segments() -> None:
             baseline_churn=0.12,
         ),
     )
+
+
+# Calibrated constants
+
+
+def test_define_frozen_calibrated_dgp_constants() -> None:
+    """Define production DGP constants from the frozen balanced calibration."""
+    assert SEGMENTS == ("price_sensitive", "price_resilient")
+    assert ACQUISITION_CHANNELS == ("organic", "affiliate", "paid_search")
+    assert SUBSCRIPTION_TIERS == ("basic", "premium")
+
+    assert DEMAND_MEAN == 1.0
+    assert DEMAND_STD_DEV == 0.10
+    assert DEMAND_LOW_BOUND == 0.75
+    assert DEMAND_HIGH_BOUND == 1.25
+
+    assert HIDDEN_SHOCK_MEAN == 0.0
+    assert HIDDEN_SHOCK_STD_DEV == 1.0
+
+    assert REFERENCE_PRICE_BY_TIER == {"basic": 19.99, "premium": 29.99}
+
+    assert STRUCTURAL_BETA_BY_SEGMENT == {
+        "price_sensitive": -2.0,
+        "price_resilient": -0.8,
+    }
+
+    assert BASELINE_CONVERSION_BY_SEGMENT == {
+        "price_sensitive": 0.35,
+        "price_resilient": 0.40,
+    }
+
+    assert PRICE_DEMAND_SENSITIVITY == 0.20
+    assert PRICE_SHOCK_SENSITIVITY == 0.025
+
+    assert PROMO_BIAS_BY_CHANNEL == {
+        "organic": -1.73,
+        "affiliate": -0.85,
+        "paid_search": 0.0,
+    }
+    assert PROMO_DEMAND_SENSITIVITY == 5.0
+    assert PROMO_SHOCK_SENSITIVITY == 0.45
+    assert PROMO_DEPTHS == (0.05, 0.10, 0.20)
+
+    assert RANDOMIZED_PRICE_MULTIPLIERS == (0.85, 0.925, 1.00, 1.075, 1.15)
+
+    assert DEMAND_CONVERSION_SENSITIVITY == 5.0
+    assert SHOCK_CONVERSION_SENSITIVITY == 0.10
+
+    assert CHANNEL_CONVERSION_EFFECT_BY_CHANNEL == {
+        "organic": -0.10,
+        "affiliate": 0.0,
+        "paid_search": 0.10,
+    }
+
+
+def test_center_channel_conversion_effects() -> None:
+    """Keep channel conversion effects centered around zero."""
+    assert sum(CHANNEL_CONVERSION_EFFECT_BY_CHANNEL.values()) == pytest.approx(0.0)

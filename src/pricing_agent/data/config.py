@@ -1,6 +1,72 @@
 """Configuration for synthetic pricing data generation."""
 
 from dataclasses import dataclass
+from typing import Final
+
+# Population
+SEGMENTS: Final = ("price_sensitive", "price_resilient")
+ACQUISITION_CHANNELS: Final = ("organic", "affiliate", "paid_search")
+SUBSCRIPTION_TIERS: Final = ("basic", "premium")
+
+# Weekly demand
+DEMAND_MEAN: Final = 1.0
+DEMAND_STD_DEV: Final = 0.10
+DEMAND_LOW_BOUND: Final = 0.75
+DEMAND_HIGH_BOUND: Final = 1.25
+
+# Hidden weekly shock
+HIDDEN_SHOCK_MEAN: Final = 0.0
+HIDDEN_SHOCK_STD_DEV: Final = 1.0
+
+# Tier reference prices
+REFERENCE_PRICE_BY_TIER: Final = {
+    "basic": 19.99,
+    "premium": 29.99,
+}
+
+# Structural conversion effect
+STRUCTURAL_BETA_BY_SEGMENT: Final = {
+    "price_sensitive": -2.0,
+    "price_resilient": -0.8,
+}
+
+# Baseline conversion
+BASELINE_CONVERSION_BY_SEGMENT: Final = {
+    "price_sensitive": 0.35,
+    "price_resilient": 0.40,
+}
+
+# Historical pricing
+PRICE_DEMAND_SENSITIVITY: Final = 0.20
+PRICE_SHOCK_SENSITIVITY: Final = 0.025
+
+# Promo assignment
+PROMO_BIAS_BY_CHANNEL: Final = {
+    "organic": -1.73,
+    "affiliate": -0.85,
+    "paid_search": 0.0,
+}
+PROMO_DEMAND_SENSITIVITY: Final = 5.0
+PROMO_SHOCK_SENSITIVITY: Final = 0.45
+PROMO_DEPTHS: Final = (0.05, 0.10, 0.20)
+
+# Randomized pricing
+RANDOMIZED_PRICE_MULTIPLIERS: Final = (
+    0.85,
+    0.925,
+    1.00,
+    1.075,
+    1.15,
+)
+
+# Conversion
+DEMAND_CONVERSION_SENSITIVITY: Final = 5.0
+SHOCK_CONVERSION_SENSITIVITY: Final = 0.10
+CHANNEL_CONVERSION_EFFECT_BY_CHANNEL: Final = {
+    "organic": -0.10,
+    "affiliate": 0.0,
+    "paid_search": 0.10,
+}
 
 
 @dataclass(frozen=True, slots=True)
