@@ -43,7 +43,7 @@ def test_main_generates_and_persists_configured_dataset(
         users_count = connection.execute("SELECT COUNT(*) FROM users").fetchone()
 
         weeks_count = connection.execute(
-            "SELECT COUNT(*) FROM weekly_demand"
+            "SELECT COUNT(*) FROM weekly_conditions"
         ).fetchone()
 
         assert users_count == (25,)

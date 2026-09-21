@@ -37,7 +37,7 @@ def test_load_pipeline_output_populates_all_tables(
         load_pipeline_output(connection=connection, output=output)
 
         expected_counts = {
-            "weekly_demand": config.n_weeks,
+            "weekly_conditions": config.n_weeks,
             "users": config.n_users,
             "weekly_price": config.n_weeks,
             "assigned_prices": config.n_users,

@@ -25,6 +25,7 @@ from pricing_agent.data.generator import (
     CONVERSION_OUTCOME_STREAM,
     CONVERSION_PROB_KEY,
     DEMAND_INDEX_KEY,
+    HIDDEN_SHOCK_KEY,
     HIDDEN_SHOCK_STREAM,
     IS_RANDOMIZED_KEY,
     MARGINAL_COST_KEY,
@@ -48,7 +49,7 @@ from pricing_agent.data.generator import (
     ConversionOutcomes,
     ConversionProbabilities,
     UserPopulation,
-    WeeklyDemand,
+    WeeklyConditions,
     assign_acquisition_costs,
     assign_marginal_costs,
     assign_user_prices,
@@ -56,7 +57,7 @@ from pricing_agent.data.generator import (
     calculate_conversion_probabilities,
     derive_seed,
     generate_users,
-    generate_weekly_demand,
+    generate_weekly_conditions,
     generate_weekly_price,
     sample_churn_outcomes,
     sample_conversions,
@@ -144,33 +145,34 @@ def test_generate_different_users_with_different_seeds(
     users_1 != users_2
 
 
-# Weekly Demand
+# Weekly Conditions
 
 
-def test_generate_weekly_demand_conditions(config: PricingDataConfig) -> None:
+def test_generate_weekly_conditions(config: PricingDataConfig) -> None:
     """Create weekly demand conditions as synthetic data."""
-    weekly_demand = generate_weekly_demand(config)
+    weekly_conditions = generate_weekly_conditions(config)
 
-    assert weekly_demand[WEEK_KEY] == list(range(config.n_weeks))
+    assert weekly_conditions[WEEK_KEY] == list(range(config.n_weeks))
     assert all(
         DEMAND_LOW_BOUND <= demand_index <= DEMAND_HIGH_BOUND
-        for demand_index in weekly_demand[DEMAND_INDEX_KEY]
+        for demand_index in weekly_conditions[DEMAND_INDEX_KEY]
     )
     assert (
-        len(weekly_demand[WEEK_KEY])
-        == len(weekly_demand[DEMAND_INDEX_KEY])
+        len(weekly_conditions[WEEK_KEY])
+        == len(weekly_conditions[DEMAND_INDEX_KEY])
+        == len(weekly_conditions[HIDDEN_SHOCK_KEY])
         == config.n_weeks
     )
 
 
-def test_reproduce_identical_weekly_demand_conditions_with_same_seed(
+def test_reproduce_identical_weekly_conditions_with_same_seed(
     config: PricingDataConfig,
 ) -> None:
-    """Reproduce identical weekly demand conditions when using the same seed."""
-    weekly_demand_1 = generate_weekly_demand(config)
-    weekly_demand_2 = generate_weekly_demand(config)
+    """Reproduce identical weekly market conditions when using the same seed."""
+    weekly_conditions_1 = generate_weekly_conditions(config)
+    weekly_conditions_2 = generate_weekly_conditions(config)
 
-    assert weekly_demand_1 == weekly_demand_2
+    assert weekly_conditions_1 == weekly_conditions_2
 
 
 # Weekly Price
@@ -178,13 +180,13 @@ def test_reproduce_identical_weekly_demand_conditions_with_same_seed(
 
 def test_generate_weekly_policy_prices(config: PricingDataConfig) -> None:
     """Create weekly policy prices as synthetic data."""
-    weekly_demand = generate_weekly_demand(config)
-    weekly_prices = generate_weekly_price(weekly_demand=weekly_demand)
+    weekly_conditions = generate_weekly_conditions(config)
+    weekly_prices = generate_weekly_price(weekly_conditions=weekly_conditions)
 
     assert weekly_prices[WEEK_KEY] == list(range(config.n_weeks))
 
     for demand_index, price in zip(
-        weekly_demand[DEMAND_INDEX_KEY],
+        weekly_conditions[DEMAND_INDEX_KEY],
         weekly_prices[PRICE_KEY],
         strict=True,
     ):
@@ -204,24 +206,25 @@ def test_generate_weekly_policy_prices(config: PricingDataConfig) -> None:
 
 def test_calculate_expected_policy_prices() -> None:
     """Calculate expected prices for known demand conditions."""
-    weekly_demand: WeeklyDemand = {
+    weekly_conditions: WeeklyConditions = {
         WEEK_KEY: [0, 1, 2],
         DEMAND_INDEX_KEY: [0.75, 1.0, 1.25],
+        HIDDEN_SHOCK_KEY: [0.0, 0.0, 0.0],
     }
 
-    weekly_prices = generate_weekly_price(weekly_demand)
+    weekly_prices = generate_weekly_price(weekly_conditions)
 
     assert weekly_prices[PRICE_KEY] == [17.99, 19.99, 21.99]
 
 
-def test_generate_expected_weekly_demand_for_frozen_seed(
+def test_generate_expected_weekly_conditions_for_frozen_seed(
     config: PricingDataConfig,
 ) -> None:
     """Generate stable weekly demand values for the frozen random stream."""
-    weekly_demand = generate_weekly_demand(config)
+    weekly_conditions = generate_weekly_conditions(config)
 
-    assert weekly_demand[WEEK_KEY] == [0, 1, 2, 3]
-    assert weekly_demand[DEMAND_INDEX_KEY] == pytest.approx(
+    assert weekly_conditions[WEEK_KEY] == [0, 1, 2, 3]
+    assert weekly_conditions[DEMAND_INDEX_KEY] == pytest.approx(
         [
             1.0054461180,
             0.8781068864,
@@ -246,8 +249,8 @@ def test_assign_user_observed_prices_without_randomization(
         segments=config.segments,
     )
     users_info = generate_users(no_randomization_config)
-    weekly_demand = generate_weekly_demand(no_randomization_config)
-    weekly_price = generate_weekly_price(weekly_demand)
+    weekly_conditions = generate_weekly_conditions(no_randomization_config)
+    weekly_price = generate_weekly_price(weekly_conditions)
 
     assigned_prices = assign_user_prices(
         config=no_randomization_config,
@@ -272,8 +275,8 @@ def test_assign_expected_number_of_randomized_user_prices(
 ) -> None:
     """Randomize the expected number of user price assignments."""
     users_info = generate_users(config)
-    weekly_demand = generate_weekly_demand(config)
-    weekly_price = generate_weekly_price(weekly_demand)
+    weekly_conditions = generate_weekly_conditions(config)
+    weekly_price = generate_weekly_price(weekly_conditions)
 
     assigned_prices = assign_user_prices(
         config=config,
@@ -293,8 +296,8 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
 ) -> None:
     """Reproduce identical user price assignments when using the same seed."""
     users_info = generate_users(config)
-    weekly_demand = generate_weekly_demand(config)
-    weekly_price = generate_weekly_price(weekly_demand)
+    weekly_conditions = generate_weekly_conditions(config)
+    weekly_price = generate_weekly_price(weekly_conditions)
 
     assigned_prices_1 = assign_user_prices(
         config=config,
@@ -352,16 +355,17 @@ def test_calculate_baseline_conversion_probability_under_reference_conditions() 
         IS_RANDOMIZED_KEY: [False],
     }
 
-    weekly_demand: WeeklyDemand = {
+    weekly_conditions: WeeklyConditions = {
         WEEK_KEY: [0],
         DEMAND_INDEX_KEY: [DEMAND_MEAN],
+        HIDDEN_SHOCK_KEY: [0.0],
     }
 
     conversion_probabilities = calculate_conversion_probabilities(
         config=config,
         generated_users=users_info,
         user_pricing=assigned_prices,
-        weekly_demand=weekly_demand,
+        weekly_conditions=weekly_conditions,
     )
 
     assert conversion_probabilities[USER_ID_KEY] == [0]
@@ -405,16 +409,17 @@ def test_decrease_conversion_probability_as_price_increases() -> None:
         IS_RANDOMIZED_KEY: [False, False, False],
     }
 
-    weekly_demand: WeeklyDemand = {
+    weekly_conditions: WeeklyConditions = {
         WEEK_KEY: [0],
         DEMAND_INDEX_KEY: [DEMAND_MEAN],
+        HIDDEN_SHOCK_KEY: [0.0],
     }
 
     conversion_probabilities = calculate_conversion_probabilities(
         config=config,
         generated_users=users_info,
         user_pricing=assigned_prices,
-        weekly_demand=weekly_demand,
+        weekly_conditions=weekly_conditions,
     )
 
     lower_price_probability, reference_probability, higher_price_probability = (
@@ -457,20 +462,21 @@ def test_increase_conversion_probability_as_demand_increases() -> None:
         IS_RANDOMIZED_KEY: [False, False, False],
     }
 
-    weekly_demand: WeeklyDemand = {
+    weekly_conditions: WeeklyConditions = {
         WEEK_KEY: [0, 1, 2],
         DEMAND_INDEX_KEY: [
             round(0.80 * DEMAND_MEAN, 2),
             DEMAND_MEAN,
             round(1.20 * DEMAND_MEAN, 2),
         ],
+        HIDDEN_SHOCK_KEY: [0.0, 0.0, 0.0],
     }
 
     conversion_probabilities = calculate_conversion_probabilities(
         config=config,
         generated_users=users_info,
         user_pricing=assigned_prices,
-        weekly_demand=weekly_demand,
+        weekly_conditions=weekly_conditions,
     )
 
     weak_demand_probability, normal_demand_probability, strong_demand_probability = (
@@ -487,8 +493,8 @@ def test_generate_valid_conversion_probabilities_for_all_users(
 ) -> None:
     """Generate a valid conversion probability for each synthetic user."""
     users_info = generate_users(config)
-    weekly_demand = generate_weekly_demand(config)
-    weekly_price = generate_weekly_price(weekly_demand)
+    weekly_conditions = generate_weekly_conditions(config)
+    weekly_price = generate_weekly_price(weekly_conditions)
 
     assigned_prices = assign_user_prices(
         config=config,
@@ -500,7 +506,7 @@ def test_generate_valid_conversion_probabilities_for_all_users(
         config=config,
         generated_users=users_info,
         user_pricing=assigned_prices,
-        weekly_demand=weekly_demand,
+        weekly_conditions=weekly_conditions,
     )
 
     assert conversion_probabilities[USER_ID_KEY] == users_info[USER_ID_KEY]

@@ -1,5 +1,5 @@
 /*
-Weekly demand synthetic market conditions.
+Weekly synthetic conditions.
 
     week: Unique week index in the simulated period.
     demand_index: Represents the relative level of market demand for a given week.
@@ -8,7 +8,7 @@ Weekly demand synthetic market conditions.
         demand. The farther the value is from 1.0, the stronger the deviation from the
         reference level.
 */
-CREATE TABLE weekly_demand (
+CREATE TABLE weekly_conditions (
     week INTEGER PRIMARY KEY NOT NULL,
     demand_index DOUBLE NOT NULL,
 
@@ -42,7 +42,7 @@ CREATE TABLE users (
     ),
 
     CONSTRAINT fk_users_signup_week
-        FOREIGN KEY (signup_week) REFERENCES weekly_demand(week)
+        FOREIGN KEY (signup_week) REFERENCES weekly_conditions(week)
 );
 
 /*
@@ -60,7 +60,7 @@ CREATE TABLE weekly_price (
         CHECK (price > 0),
 
     CONSTRAINT fk_weekly_price_week
-        FOREIGN KEY (week) REFERENCES weekly_demand(week)
+        FOREIGN KEY (week) REFERENCES weekly_conditions(week)
 );
 
 /*

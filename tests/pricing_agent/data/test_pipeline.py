@@ -17,7 +17,7 @@ def test_run_pipeline_end_to_end() -> None:
 
     assert set(output) == {
         "users",
-        "weekly_demand",
+        "weekly_conditions",
         "weekly_prices",
         "assigned_prices",
         "conversion_probabilities",

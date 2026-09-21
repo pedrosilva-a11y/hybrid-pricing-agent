@@ -13,6 +13,8 @@ from pricing_agent.data.config import (
     DEMAND_LOW_BOUND,
     DEMAND_MEAN,
     DEMAND_STD_DEV,
+    HIDDEN_SHOCK_MEAN,
+    HIDDEN_SHOCK_STD_DEV,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
 )
@@ -37,7 +39,7 @@ USER_ID_KEY: Final = "user_id"
 
 # Weekly Demand Global Variables
 DEMAND_INDEX_KEY: Final = "demand_index"
-# Generates a moderate spread (~99.7% of values fall between 0.76 and 1.24)
+HIDDEN_SHOCK_KEY: Final = "hidden_shock"
 WEEK_KEY: Final = "week"
 
 # Weekly Price Global Variables
@@ -102,20 +104,23 @@ class UserPopulation(TypedDict):
     tier: list[str]
 
 
-class WeeklyDemand(TypedDict):
-    """Column-oriented synthetic weekly demand population.
+class WeeklyConditions(TypedDict):
+    """Column-oriented synthetic weekly market conditions.
 
     Attributes:
         week: Unique week index in the simulated period.
-        demand_index: Represents the relative level of market demand for a given week.
+        demand_index: Relative level of market demand for a given week.
             A value of 1.0 represents normal reference demand. Values above 1.0 indicate
             stronger-than-normal demand, while values below 1.0 indicate
-            weaker-than-normal demand. The farther the value is from 1.0, the stronger
-            the deviation from the reference level.
+            weaker-than-normal demand.
+        hidden_shock: Unobserved week-level market shock sampled independently from the
+            demand index. Positive and negative values represent latent weekly factors
+            that affect pricing and conversion but are excluded from the modeling path.
     """
 
     week: list[int]
     demand_index: list[float]
+    hidden_shock: list[float]
 
 
 class WeeklyPrice(TypedDict):
@@ -254,44 +259,53 @@ def generate_users(config: PricingDataConfig) -> UserPopulation:
     for user_id in range(config.n_users):
         synthetic_data[USER_ID_KEY].append(user_id)
         synthetic_data[SIGNUP_WEEK_KEY].append(int(rng.integers(config.n_weeks)))
-        synthetic_data[SEGMENT_KEY].append(rng.choice(segment_names))
-        synthetic_data[CHANNEL_KEY].append(rng.choice(ACQUISITION_CHANNELS))
-        synthetic_data[TIER_KEY].append(rng.choice(SUBSCRIPTION_TIERS))
+        synthetic_data[SEGMENT_KEY].append(str(rng.choice(segment_names)))
+        synthetic_data[CHANNEL_KEY].append(str(rng.choice(ACQUISITION_CHANNELS)))
+        synthetic_data[TIER_KEY].append(str(rng.choice(SUBSCRIPTION_TIERS)))
 
     return synthetic_data
 
 
-def generate_weekly_demand(config: PricingDataConfig) -> WeeklyDemand:
-    """Generate reproducible weekly market demand conditions.
+def generate_weekly_conditions(config: PricingDataConfig) -> WeeklyConditions:
+    """Generate reproducible weekly market conditions.
 
     Args:
         config: Generation configuration defining the number of simulated weeks
             and the random seed.
 
     Returns:
-        Column-oriented weekly demand data containing one demand index per week.
+        Column-oriented weekly market conditions containing one demand index and
+            hidden shock per week.
     """
     n_weeks = config.n_weeks
 
-    rng = np.random.default_rng(derive_seed(config.seed, WEEKLY_DEMAND_STREAM))
+    demand_rng = np.random.default_rng(derive_seed(config.seed, WEEKLY_DEMAND_STREAM))
+    shock_rng = np.random.default_rng(derive_seed(config.seed, HIDDEN_SHOCK_STREAM))
 
-    raw_demand = rng.normal(loc=DEMAND_MEAN, scale=DEMAND_STD_DEV, size=n_weeks)
-
+    raw_demand = demand_rng.normal(loc=DEMAND_MEAN, scale=DEMAND_STD_DEV, size=n_weeks)
     simulated_demand = np.clip(raw_demand, DEMAND_LOW_BOUND, DEMAND_HIGH_BOUND)
+
+    hidden_shock = shock_rng.normal(
+        loc=HIDDEN_SHOCK_MEAN,
+        scale=HIDDEN_SHOCK_STD_DEV,
+        size=n_weeks,
+    )
 
     return {
         WEEK_KEY: list(range(n_weeks)),
         DEMAND_INDEX_KEY: simulated_demand.tolist(),
+        HIDDEN_SHOCK_KEY: hidden_shock.tolist(),
     }
 
 
 def generate_weekly_price(
-    weekly_demand: WeeklyDemand,
+    weekly_conditions: WeeklyConditions,
 ) -> WeeklyPrice:
-    """Generate weekly policy prices from market demand conditions.
+    """Generate weekly policy prices from simulated market conditions.
 
     Args:
-        weekly_demand: Weekly market demand conditions used by the pricing policy.
+        weekly_conditions: Weekly market conditions containing observed demand and
+            latent market shocks.
 
     Returns:
         Column-oriented weekly pricing data containing one policy price per week.
@@ -302,11 +316,11 @@ def generate_weekly_price(
             * (1.0 + PRICE_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)),
             2,
         )
-        for demand_index in weekly_demand[DEMAND_INDEX_KEY]
+        for demand_index in weekly_conditions[DEMAND_INDEX_KEY]
     ]
 
     return {
-        WEEK_KEY: weekly_demand[WEEK_KEY].copy(),
+        WEEK_KEY: weekly_conditions[WEEK_KEY].copy(),
         PRICE_KEY: prices,
     }
 
@@ -361,7 +375,7 @@ def calculate_conversion_probabilities(
     config: PricingDataConfig,
     generated_users: UserPopulation,
     user_pricing: AssignedUserPrices,
-    weekly_demand: WeeklyDemand,
+    weekly_conditions: WeeklyConditions,
 ) -> ConversionProbabilities:
     """Calculate the conversion probability per user.
 
@@ -369,7 +383,8 @@ def calculate_conversion_probabilities(
         config: Generation configuration containing customer segment parameters.
         generated_users: Synthetic user population containing signup weeks.
         user_pricing: User-level observed pricing assignments.
-        weekly_demand: Weekly market demand conditions used by the pricing policy.
+        weekly_conditions: Weekly market conditions containing observed demand and
+            the latent weekly market shock.
 
     Returns:
         Probability of each user being converted.
@@ -387,7 +402,7 @@ def calculate_conversion_probabilities(
 
         observed_price = user_pricing[OBSERVED_PRICE_KEY][index]
         signup_week = generated_users[SIGNUP_WEEK_KEY][index]
-        demand_index = weekly_demand[DEMAND_INDEX_KEY][signup_week]
+        demand_index = weekly_conditions[DEMAND_INDEX_KEY][signup_week]
 
         log_odds = math.log(baseline_conversion / (1 - baseline_conversion))
         price_effect = price_coefficient * math.log(observed_price / REFERENCE_PRICE)

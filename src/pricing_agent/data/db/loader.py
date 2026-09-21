@@ -47,12 +47,12 @@ def load_pipeline_output(
     try:
         _insert_rows(
             connection,
-            table="weekly_demand",
+            table="weekly_conditions",
             columns=("week", "demand_index"),
             values=list(
                 zip(
-                    output["weekly_demand"]["week"],
-                    output["weekly_demand"]["demand_index"],
+                    output["weekly_conditions"]["week"],
+                    output["weekly_conditions"]["demand_index"],
                 )
             ),
         )

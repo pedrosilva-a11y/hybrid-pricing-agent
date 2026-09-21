@@ -5,7 +5,7 @@ from pathlib import Path
 from pricing_agent.data.db.database import connect_database, initialize_database
 
 EXPECTED_TABLES = {
-    "weekly_demand",
+    "weekly_conditions",
     "users",
     "weekly_price",
     "assigned_prices",
@@ -53,6 +53,26 @@ def test_initialize_database_creates_expected_tables(tmp_path: Path) -> None:
         table_names = {row[0] for row in rows}
 
         assert table_names == EXPECTED_TABLES
+
+    finally:
+        connection.close()
+
+
+def test_exclude_hidden_shock_from_observable_schema(tmp_path: Path) -> None:
+    """Exclude the latent weekly shock from the observable database schema."""
+    connection = connect_database(tmp_path / "test.duckdb")
+
+    try:
+        initialize_database(connection)
+
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info('weekly_conditions')"
+            ).fetchall()
+        }
+
+        assert columns == {"week", "demand_index"}
 
     finally:
         connection.close()
