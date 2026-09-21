@@ -54,6 +54,7 @@ from pricing_agent.data.generator import (
     assign_marginal_costs,
     assign_randomized_arms,
     assign_user_prices,
+    calculate_base_price,
     calculate_churn_probabilities,
     calculate_conversion_probabilities,
     derive_seed,
@@ -233,6 +234,34 @@ def test_generate_expected_weekly_conditions_for_frozen_seed(
             1.1192886592,
         ]
     )
+
+
+# Base Price Calculation
+
+
+def test_return_reference_price_under_reference_conditions() -> None:
+    """Return the tier reference price under neutral market conditions."""
+    assert calculate_base_price("basic", 1.0, 0.0) == pytest.approx(19.99)
+    assert calculate_base_price("premium", 1.0, 0.0) == pytest.approx(29.99)
+
+
+def test_increase_base_price_with_demand_and_positive_shock() -> None:
+    """Increase historical base price as demand and latent shock increase."""
+    reference = calculate_base_price("basic", 1.0, 0.0)
+    stronger_demand = calculate_base_price("basic", 1.1, 0.0)
+    positive_shock = calculate_base_price("basic", 1.0, 1.0)
+
+    assert stronger_demand > reference
+    assert positive_shock > reference
+
+
+def test_calculate_expected_base_price() -> None:
+    """Calculate the expected base price from calibrated pricing parameters."""
+    price = calculate_base_price("basic", 1.10, 0.50)
+
+    expected = 19.99 * (1.0 + 0.20 * 0.10 + 0.025 * 0.50)
+
+    assert price == pytest.approx(expected)
 
 
 # Randomized arm assignment

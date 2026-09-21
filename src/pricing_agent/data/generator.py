@@ -15,6 +15,9 @@ from pricing_agent.data.config import (
     DEMAND_STD_DEV,
     HIDDEN_SHOCK_MEAN,
     HIDDEN_SHOCK_STD_DEV,
+    PRICE_DEMAND_SENSITIVITY,
+    PRICE_SHOCK_SENSITIVITY,
+    REFERENCE_PRICE_BY_TIER,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
 )
@@ -43,13 +46,13 @@ HIDDEN_SHOCK_KEY: Final = "hidden_shock"
 WEEK_KEY: Final = "week"
 
 # Weekly Price Global Variables
-PRICE_DEMAND_SENSITIVITY: Final = 0.4
 PRICE_KEY: Final = "price"
 REFERENCE_PRICE: Final = 19.99
 
 # Assign User Prices Global Variables
 EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
 IS_RANDOMIZED_KEY: Final = "is_randomized"
+LEGACY_PRICE_DEMAND_SENSITIVITY: Final = 0.4
 OBSERVED_PRICE_KEY: Final = "observed_price"
 
 # Conversion Probabilities Global Variables
@@ -325,7 +328,7 @@ def generate_weekly_price(
     prices = [
         round(
             REFERENCE_PRICE
-            * (1.0 + PRICE_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)),
+            * (1.0 + LEGACY_PRICE_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)),
             2,
         )
         for demand_index in weekly_conditions[DEMAND_INDEX_KEY]
@@ -335,6 +338,26 @@ def generate_weekly_price(
         WEEK_KEY: weekly_conditions[WEEK_KEY].copy(),
         PRICE_KEY: prices,
     }
+
+
+def calculate_base_price(tier: str, demand_index: float, hidden_shock: float) -> float:
+    """Calculate the historical base price for a tier and weekly conditions.
+
+    Args:
+        tier: Subscription tier determining the reference price.
+        demand_index: Relative weekly market demand.
+        hidden_shock: Latent weekly market shock affecting historical pricing.
+
+    Returns:
+        Base price implied by the calibrated historical pricing policy.
+    """
+    reference_price = REFERENCE_PRICE_BY_TIER[tier]
+
+    return reference_price * (
+        1.0
+        + PRICE_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)
+        + PRICE_SHOCK_SENSITIVITY * hidden_shock
+    )
 
 
 def assign_randomized_arms(
