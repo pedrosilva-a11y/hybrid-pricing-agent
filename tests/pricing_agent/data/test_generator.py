@@ -57,6 +57,7 @@ from pricing_agent.data.generator import (
     calculate_base_price,
     calculate_churn_probabilities,
     calculate_conversion_probabilities,
+    calculate_promo_probability,
     derive_seed,
     generate_users,
     generate_weekly_base_prices,
@@ -177,7 +178,35 @@ def test_reproduce_identical_weekly_conditions_with_same_seed(
     assert weekly_conditions_1 == weekly_conditions_2
 
 
-# Weekly Price
+# Base Price Calculation
+
+
+def test_return_reference_price_under_reference_conditions() -> None:
+    """Return the tier reference price under neutral market conditions."""
+    assert calculate_base_price("basic", 1.0, 0.0) == pytest.approx(19.99)
+    assert calculate_base_price("premium", 1.0, 0.0) == pytest.approx(29.99)
+
+
+def test_increase_base_price_with_demand_and_positive_shock() -> None:
+    """Increase historical base price as demand and latent shock increase."""
+    reference = calculate_base_price("basic", 1.0, 0.0)
+    stronger_demand = calculate_base_price("basic", 1.1, 0.0)
+    positive_shock = calculate_base_price("basic", 1.0, 1.0)
+
+    assert stronger_demand > reference
+    assert positive_shock > reference
+
+
+def test_calculate_expected_base_price() -> None:
+    """Calculate the expected base price from calibrated pricing parameters."""
+    price = calculate_base_price("basic", 1.10, 0.50)
+
+    expected = 19.99 * (1.0 + 0.20 * 0.10 + 0.025 * 0.50)
+
+    assert price == pytest.approx(expected)
+
+
+# Weekly Base Price
 
 
 def test_generate_weekly_base_prices(config: PricingDataConfig) -> None:
@@ -243,32 +272,87 @@ def test_generate_expected_weekly_conditions_for_frozen_seed(
     )
 
 
-# Base Price Calculation
+# Promotion probability calculation
 
 
-def test_return_reference_price_under_reference_conditions() -> None:
-    """Return the tier reference price under neutral market conditions."""
-    assert calculate_base_price("basic", 1.0, 0.0) == pytest.approx(19.99)
-    assert calculate_base_price("premium", 1.0, 0.0) == pytest.approx(29.99)
+def test_return_expected_promo_probability_under_neutral_conditions() -> None:
+    """Calculate promo probability from the calibrated channel bias."""
+    promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.0,
+        hidden_shock=0.0,
+    )
+
+    expected_promo_prob = 1.0 / (1.0 + math.exp(0.85))
+
+    assert promo_prob == pytest.approx(expected_promo_prob)
 
 
-def test_increase_base_price_with_demand_and_positive_shock() -> None:
-    """Increase historical base price as demand and latent shock increase."""
-    reference = calculate_base_price("basic", 1.0, 0.0)
-    stronger_demand = calculate_base_price("basic", 1.1, 0.0)
-    positive_shock = calculate_base_price("basic", 1.0, 1.0)
+def test_decrease_promo_probability_as_demand_increases() -> None:
+    """Decrease promotion probability as market demand strengthens."""
+    higher_demand_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.2,
+        hidden_shock=0.0,
+    )
+    neutral_demand_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.0,
+        hidden_shock=0.0,
+    )
+    lower_demand_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=0.8,
+        hidden_shock=0.0,
+    )
 
-    assert stronger_demand > reference
-    assert positive_shock > reference
+    assert (
+        higher_demand_promo_prob < neutral_demand_promo_prob < lower_demand_promo_prob
+    )
 
 
-def test_calculate_expected_base_price() -> None:
-    """Calculate the expected base price from calibrated pricing parameters."""
-    price = calculate_base_price("basic", 1.10, 0.50)
+def test_decrease_promo_probability_with_positive_hidden_shock() -> None:
+    """Decrease promotion probability as the latent market shock increases."""
+    neutral_shock_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.0,
+        hidden_shock=0.0,
+    )
+    positive_shock_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.0,
+        hidden_shock=0.2,
+    )
+    negative_shock_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.0,
+        hidden_shock=-0.2,
+    )
 
-    expected = 19.99 * (1.0 + 0.20 * 0.10 + 0.025 * 0.50)
+    assert (
+        positive_shock_promo_prob < neutral_shock_promo_prob < negative_shock_promo_prob
+    )
 
-    assert price == pytest.approx(expected)
+
+def test_rank_promo_probability_by_channel_bias() -> None:
+    """Rank promo probabilities as paid search, affiliate, then organic."""
+    paid_search_promo_prob = calculate_promo_probability(
+        channel="paid_search",
+        demand_index=1.0,
+        hidden_shock=0.0,
+    )
+    affiliate_promo_prob = calculate_promo_probability(
+        channel="affiliate",
+        demand_index=1.0,
+        hidden_shock=0.0,
+    )
+    organic_promo_prob = calculate_promo_probability(
+        channel="organic",
+        demand_index=1.0,
+        hidden_shock=0.0,
+    )
+
+    assert organic_promo_prob < affiliate_promo_prob < paid_search_promo_prob
 
 
 # Randomized arm assignment

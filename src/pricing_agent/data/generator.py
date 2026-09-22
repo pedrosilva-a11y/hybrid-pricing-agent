@@ -17,6 +17,9 @@ from pricing_agent.data.config import (
     HIDDEN_SHOCK_STD_DEV,
     PRICE_DEMAND_SENSITIVITY,
     PRICE_SHOCK_SENSITIVITY,
+    PROMO_BIAS_BY_CHANNEL,
+    PROMO_DEMAND_SENSITIVITY,
+    PROMO_SHOCK_SENSITIVITY,
     REFERENCE_PRICE_BY_TIER,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
@@ -372,6 +375,30 @@ def generate_weekly_base_prices(
         TIER_KEY: tiers,
         PRICE_KEY: base_prices,
     }
+
+
+def calculate_promo_probability(
+    channel: str,
+    demand_index: float,
+    hidden_shock: float,
+) -> float:
+    """Calculate the probability of receiving an observational promotion.
+
+    Args:
+        channel: User acquisition channel affecting promotion propensity.
+        demand_index: Relative week market demand.
+        hidden_shock: Latent weekly market shock affecting promotion propensity.
+
+    Returns:
+        Probability that the user receives a promotion.
+    """
+    logit_promo = (
+        PROMO_BIAS_BY_CHANNEL[channel]
+        - PROMO_DEMAND_SENSITIVITY * (demand_index - DEMAND_MEAN)
+        - PROMO_SHOCK_SENSITIVITY * hidden_shock
+    )
+
+    return 1.0 / (1.0 + math.exp(-logit_promo))
 
 
 def assign_randomized_arms(
