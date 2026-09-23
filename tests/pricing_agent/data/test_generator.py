@@ -11,6 +11,7 @@ from pricing_agent.data.config import (
     DEMAND_LOW_BOUND,
     DEMAND_MEAN,
     PROMO_DEPTHS,
+    REFERENCE_PRICE_BY_TIER,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
     SegmentConfig,
@@ -581,12 +582,23 @@ def test_assign_user_observed_prices_without_randomization(
         config=no_randomization_config,
         generated_users=users_info,
     )
+    promo_assignments = assign_promotions(
+        config=no_randomization_config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+    promo_depths = assign_promo_depths(
+        config=no_randomization_config,
+        promo_assignments=promo_assignments,
+    )
 
     assigned_prices = assign_user_prices(
         config=no_randomization_config,
         generated_users=users_info,
         weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
     )
 
     assert assigned_prices[USER_ID_KEY] == users_info[USER_ID_KEY]
@@ -606,9 +618,13 @@ def test_assign_user_observed_prices_without_randomization(
 
     for index, signup_week in enumerate(users_info[SIGNUP_WEEK_KEY]):
         tier = users_info[TIER_KEY][index]
+        base_price = price_by_week_and_tier[(signup_week, tier)]
+        promo_depth = promo_depths[PROMO_DEPTH_KEY][index]
+
+        expected_price = base_price * (1.0 - promo_depth)
 
         assert assigned_prices[OBSERVED_PRICE_KEY][index] == pytest.approx(
-            price_by_week_and_tier[(signup_week, tier)]
+            expected_price
         )
 
 
@@ -620,12 +636,23 @@ def test_assign_expected_number_of_randomized_user_prices(
     weekly_conditions = generate_weekly_conditions(config)
     weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
     )
 
     expected_randomized_users = math.ceil(config.randomization_rate * config.n_users)
@@ -643,12 +670,23 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
     weekly_conditions = generate_weekly_conditions(config)
     weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
 
     assigned_prices_1 = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
     )
 
     assigned_prices_2 = assign_user_prices(
@@ -656,6 +694,7 @@ def test_reproduce_identical_user_price_assignments_with_same_seed(
         generated_users=users_info,
         weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
     )
 
     assert assigned_prices_1 == assigned_prices_2
@@ -698,7 +737,7 @@ def test_calculate_baseline_conversion_probability_under_reference_conditions() 
 
     assigned_prices: AssignedUserPrices = {
         USER_ID_KEY: [0],
-        OBSERVED_PRICE_KEY: [REFERENCE_PRICE],
+        OBSERVED_PRICE_KEY: [REFERENCE_PRICE_BY_TIER["basic"]],
         IS_RANDOMIZED_KEY: [False],
     }
 
@@ -843,12 +882,23 @@ def test_generate_valid_conversion_probabilities_for_all_users(
     weekly_conditions = generate_weekly_conditions(config)
     weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
 
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
     )
 
     conversion_probabilities = calculate_conversion_probabilities(

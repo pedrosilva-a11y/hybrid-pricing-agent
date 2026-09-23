@@ -548,6 +548,7 @@ def assign_user_prices(
     generated_users: UserPopulation,
     weekly_base_prices: WeeklyBasePrices,
     randomized_arms: RandomizedArmAssignments,
+    promo_depths: PromoDepthAssignments,
 ) -> AssignedUserPrices:
     """Assign observed prices to synthetic users.
 
@@ -558,6 +559,7 @@ def assign_user_prices(
         weekly_base_prices: Tier-specific weekly base prices generated from the
             simulated market conditions.
         randomized_arms: User-level randomized pricing arm assignments.
+        promo_depths: User-level observational promotion depth assignments.
 
     Returns:
         Column-oriented user pricing data containing each user's observed price and
@@ -584,9 +586,11 @@ def assign_user_prices(
         if randomized:
             price_multiplier = rng.choice(EXPERIMENTAL_PRICE_MULTIPLIERS)
             observed_price = round(REFERENCE_PRICE_BY_TIER[tier] * price_multiplier, 2)
-
         else:
-            observed_price = price_by_week_and_tier[(signup_week, tier)]
+            base_price = price_by_week_and_tier[(signup_week, tier)]
+            promo_depth = promo_depths[PROMO_DEPTH_KEY][index]
+
+            observed_price = base_price * (1.0 - promo_depth)
 
         observed_prices.append(observed_price)
 

@@ -9,6 +9,8 @@ from pricing_agent.data.generator import (
     ChurnProbabilities,
     ConversionOutcomes,
     ConversionProbabilities,
+    PromoAssignments,
+    PromoDepthAssignments,
     UserAcquisitionCosts,
     UserMarginalCosts,
     UserPopulation,
@@ -16,6 +18,8 @@ from pricing_agent.data.generator import (
     WeeklyConditions,
     assign_acquisition_costs,
     assign_marginal_costs,
+    assign_promo_depths,
+    assign_promotions,
     assign_randomized_arms,
     assign_user_prices,
     calculate_churn_probabilities,
@@ -37,6 +41,8 @@ class PipelineOutput(TypedDict):
             demand and the latent market shock.
         weekly_base_prices: Tier-specific weekly base prices implied by the
             calibrated historical pricing policy.
+        promo_assignments: User-level observational promotion assignments.
+        promo_depths: User-level promotion depth assignments.
         assigned_prices: User-level observed price assignments after applying
             historical or randomized pricing logic.
         conversion_probabilities: User-level conversion probabilities.
@@ -50,6 +56,8 @@ class PipelineOutput(TypedDict):
     users: UserPopulation
     weekly_conditions: WeeklyConditions
     weekly_base_prices: WeeklyBasePrices
+    promo_assignments: PromoAssignments
+    promo_depths: PromoDepthAssignments
     assigned_prices: AssignedUserPrices
     conversion_probabilities: ConversionProbabilities
     conversion_outcomes: ConversionOutcomes
@@ -76,11 +84,24 @@ def run_pipeline(config: PricingDataConfig) -> PipelineOutput:
 
     randomized_arms = assign_randomized_arms(config=config, generated_users=users_info)
 
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
+
     assigned_prices = assign_user_prices(
         config=config,
         generated_users=users_info,
         weekly_base_prices=weekly_base_prices,
         randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
     )
 
     conversion_probabilities = calculate_conversion_probabilities(
@@ -115,6 +136,8 @@ def run_pipeline(config: PricingDataConfig) -> PipelineOutput:
         users=users_info,
         weekly_conditions=weekly_conditions,
         weekly_base_prices=weekly_base_prices,
+        promo_assignments=promo_assignments,
+        promo_depths=promo_depths,
         assigned_prices=assigned_prices,
         conversion_probabilities=conversion_probabilities,
         conversion_outcomes=sampled_conversions,

@@ -19,6 +19,8 @@ def test_run_pipeline_end_to_end() -> None:
         "users",
         "weekly_conditions",
         "weekly_base_prices",
+        "promo_assignments",
+        "promo_depths",
         "assigned_prices",
         "conversion_probabilities",
         "conversion_outcomes",
@@ -29,6 +31,8 @@ def test_run_pipeline_end_to_end() -> None:
     }
 
     assert len(output["users"][USER_ID_KEY]) == config.n_users
+    assert len(output["promo_assignments"][USER_ID_KEY]) == config.n_users
+    assert len(output["promo_depths"][USER_ID_KEY]) == config.n_users
     assert len(output["assigned_prices"][USER_ID_KEY]) == config.n_users
     assert len(output["conversion_outcomes"][USER_ID_KEY]) == config.n_users
     assert len(output["churn_outcomes"][USER_ID_KEY]) == config.n_users
