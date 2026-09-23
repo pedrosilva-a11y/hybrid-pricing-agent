@@ -19,6 +19,7 @@ from pricing_agent.data.config import (
     PRICE_SHOCK_SENSITIVITY,
     PROMO_BIAS_BY_CHANNEL,
     PROMO_DEMAND_SENSITIVITY,
+    PROMO_DEPTHS,
     PROMO_SHOCK_SENSITIVITY,
     REFERENCE_PRICE_BY_TIER,
     SUBSCRIPTION_TIERS,
@@ -54,6 +55,9 @@ REFERENCE_PRICE: Final = 19.99
 
 # Promotion Assignment Global Variable
 PROMO_KEY: Final = "promo"
+
+# Promotion Depth Global Variable
+PROMO_DEPTH_KEY: Final = "promo_depth"
 
 # Assign User Prices Global Variables
 EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
@@ -167,6 +171,19 @@ class PromoAssignments(TypedDict):
 
     user_id: list[int]
     promo: list[bool]
+
+
+class PromoDepthAssignments(TypedDict):
+    """Column-oriented observational promotion depth assignments.
+
+    Attributes:
+        user_id: Unique user identifier.
+        promo_depth: Discount fraction assigned to the user. Users without an
+            observational promotion receive a depth of zero.
+    """
+
+    user_id: list[int]
+    promo_depth: list[float]
 
 
 class AssignedUserPrices(TypedDict):
@@ -460,6 +477,38 @@ def assign_promotions(
     return {
         USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
         PROMO_KEY: promotions,
+    }
+
+
+def assign_promo_depths(
+    config: PricingDataConfig,
+    promo_assignments: PromoAssignments,
+) -> PromoDepthAssignments:
+    """Assign promotion depths to users receiving observational promotions.
+
+    Args:
+        config: Generation configuration containing the master random seed.
+        promo_assignments: User-level observational promotion assignments.
+
+    Returns:
+        Column-oriented promotion depths containing one depth per user.
+    """
+    rng = np.random.default_rng(derive_seed(config.seed, PROMO_DEPTH_STREAM))
+
+    sampled_depths = rng.choice(PROMO_DEPTHS, size=len(promo_assignments[USER_ID_KEY]))
+
+    promo_depths = [
+        float(depth) if promo else 0.0
+        for promo, depth in zip(
+            promo_assignments[PROMO_KEY],
+            sampled_depths,
+            strict=True,
+        )
+    ]
+
+    return {
+        USER_ID_KEY: promo_assignments[USER_ID_KEY].copy(),
+        PROMO_DEPTH_KEY: promo_depths,
     }
 
 

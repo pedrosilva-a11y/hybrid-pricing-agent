@@ -10,6 +10,7 @@ from pricing_agent.data.config import (
     DEMAND_HIGH_BOUND,
     DEMAND_LOW_BOUND,
     DEMAND_MEAN,
+    PROMO_DEPTHS,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
     SegmentConfig,
@@ -33,6 +34,7 @@ from pricing_agent.data.generator import (
     PRICE_ASSIGNMENT_STREAM,
     PRICE_KEY,
     PROMO_ASSIGNMENT_STREAM,
+    PROMO_DEPTH_KEY,
     PROMO_DEPTH_STREAM,
     PROMO_KEY,
     RANDOMIZED_ARM_STREAM,
@@ -49,10 +51,12 @@ from pricing_agent.data.generator import (
     ChurnProbabilities,
     ConversionOutcomes,
     ConversionProbabilities,
+    PromoAssignments,
     UserPopulation,
     WeeklyConditions,
     assign_acquisition_costs,
     assign_marginal_costs,
+    assign_promo_depths,
     assign_promotions,
     assign_randomized_arms,
     assign_user_prices,
@@ -426,6 +430,82 @@ def test_assign_expected_promotions_for_frozen_seed(config: PricingDataConfig) -
         False,
         False,
         False,
+    ]
+
+
+# Promo Depths Assignment
+
+
+def test_assign_zero_depth_without_promotion(config: PricingDataConfig) -> None:
+    """Assign zero promotion depth to users without a promotion."""
+    promo_assignments: PromoAssignments = {
+        USER_ID_KEY: [0, 1, 2],
+        PROMO_KEY: [False, False, False],
+    }
+
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
+
+    assert promo_depths[USER_ID_KEY] == [0, 1, 2]
+    assert promo_depths[PROMO_DEPTH_KEY] == [0.0, 0.0, 0.0]
+
+
+def test_assign_allowed_depth_to_promoted_users(config: PricingDataConfig) -> None:
+    """Assign configured promotion depths only to promoted users."""
+    promo_assignments: PromoAssignments = {
+        USER_ID_KEY: [0, 1, 2, 3],
+        PROMO_KEY: [True, False, True, False],
+    }
+
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
+
+    for promo, depth in zip(
+        promo_assignments[PROMO_KEY],
+        promo_depths[PROMO_DEPTH_KEY],
+        strict=True,
+    ):
+        if promo:
+            assert depth in PROMO_DEPTHS
+        else:
+            assert depth == 0.0
+
+
+def test_assign_expected_promo_depths_for_frozen_seed(
+    config: PricingDataConfig,
+) -> None:
+    """Assign the expected promotion depths for the frozen random seed."""
+    users = generate_users(config)
+    weekly_conditions = generate_weekly_conditions(config)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users)
+
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
+
+    assert promo_depths[PROMO_DEPTH_KEY] == [
+        0.0,
+        0.0,
+        0.0,
+        0.2,
+        0.0,
+        0.05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
     ]
 
 
