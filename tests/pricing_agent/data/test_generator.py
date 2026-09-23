@@ -34,6 +34,7 @@ from pricing_agent.data.generator import (
     PRICE_KEY,
     PROMO_ASSIGNMENT_STREAM,
     PROMO_DEPTH_STREAM,
+    PROMO_KEY,
     RANDOMIZED_ARM_STREAM,
     REFERENCE_PRICE,
     SEGMENT_KEY,
@@ -52,6 +53,7 @@ from pricing_agent.data.generator import (
     WeeklyConditions,
     assign_acquisition_costs,
     assign_marginal_costs,
+    assign_promotions,
     assign_randomized_arms,
     assign_user_prices,
     calculate_base_price,
@@ -353,6 +355,78 @@ def test_rank_promo_probability_by_channel_bias() -> None:
     )
 
     assert organic_promo_prob < affiliate_promo_prob < paid_search_promo_prob
+
+
+# Promotion assignment
+
+
+def test_exclude_randomized_users_from_promotions(config: PricingDataConfig) -> None:
+    """Exclude randomized pricing users from observational promotions."""
+    users = generate_users(config)
+    weekly_conditions = generate_weekly_conditions(config)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users)
+
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    for index, randomized in enumerate(randomized_arms[IS_RANDOMIZED_KEY]):
+        if randomized:
+            assert not promo_assignments[PROMO_KEY][index]
+
+
+def test_reproduce_identical_promo_assignments_with_same_seed(
+    config: PricingDataConfig,
+) -> None:
+    """Reproduce identical promotion assignments with the same seed."""
+    users = generate_users(config)
+    weekly_conditions = generate_weekly_conditions(config)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users)
+
+    assignments_1 = assign_promotions(
+        config=config,
+        generated_users=users,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+    assignments_2 = assign_promotions(
+        config=config,
+        generated_users=users,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    assert assignments_1 == assignments_2
+
+
+def test_assign_expected_promotions_for_frozen_seed(config: PricingDataConfig) -> None:
+    """Assign the expected promotions for the frozen random seed."""
+    users = generate_users(config)
+    weekly_conditions = generate_weekly_conditions(config)
+    randomized_arms = assign_randomized_arms(config=config, generated_users=users)
+
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    assert promo_assignments[PROMO_KEY] == [
+        False,
+        False,
+        False,
+        True,
+        False,
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
 
 
 # Randomized arm assignment

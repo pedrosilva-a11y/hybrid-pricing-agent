@@ -52,6 +52,9 @@ WEEK_KEY: Final = "week"
 PRICE_KEY: Final = "price"
 REFERENCE_PRICE: Final = 19.99
 
+# Promotion Assignment Global Variable
+PROMO_KEY: Final = "promo"
+
 # Assign User Prices Global Variables
 EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
 IS_RANDOMIZED_KEY: Final = "is_randomized"
@@ -154,13 +157,25 @@ class WeeklyBasePrices(TypedDict):
     price: list[float]
 
 
+class PromoAssignments(TypedDict):
+    """Column-oriented observational promotion assignments.
+
+    Attributes:
+        user_id: Unique user identifier.
+        promo: Whether the user receives an observational promotion.
+    """
+
+    user_id: list[int]
+    promo: list[bool]
+
+
 class AssignedUserPrices(TypedDict):
     """Column-oriented synthetic user price assignments.
 
     Attributes:
         user_id: Unique user identifier.
         observed_price: Price assigned to the user. For non-randomized users, this
-            matches th tier-specific base price for the user's signup week. For
+            matches the tier-specific base price for the user's signup week. For
             randomized users, this is assigned independently of the historical
             pricing policy.
         is_randomized: Whether the user's observed price was assigned through the
@@ -399,6 +414,53 @@ def calculate_promo_probability(
     )
 
     return 1.0 / (1.0 + math.exp(-logit_promo))
+
+
+def assign_promotions(
+    config: PricingDataConfig,
+    generated_users: UserPopulation,
+    weekly_conditions: WeeklyConditions,
+    randomized_arms: RandomizedArmAssignments,
+) -> PromoAssignments:
+    """Assign observational promotions to synthetic users.
+
+    Args:
+        config: Generation configuration containing the master random seed.
+        generated_users: Synthetic user population containing the signup weeks and
+            acquisition channels.
+        weekly_conditions: Weekly market conditions affecting promotion propensity.
+        randomized_arms: User-level randomized pricing arm assignments.
+
+    Returns:
+        Column-oriented promotion assignments containing each user identifier and
+        whether the user receives an observational promotion.
+    """
+    rng = np.random.default_rng(derive_seed(config.seed, PROMO_ASSIGNMENT_STREAM))
+
+    draws = rng.random(len(generated_users[USER_ID_KEY]))
+
+    promotions: list[bool] = []
+
+    for index, draw in enumerate(draws):
+        if randomized_arms[IS_RANDOMIZED_KEY][index]:
+            promotions.append(False)
+            continue
+
+        signup_week = generated_users[SIGNUP_WEEK_KEY][index]
+        channel = generated_users[CHANNEL_KEY][index]
+
+        promo_prob = calculate_promo_probability(
+            channel=channel,
+            demand_index=weekly_conditions[DEMAND_INDEX_KEY][signup_week],
+            hidden_shock=weekly_conditions[HIDDEN_SHOCK_KEY][signup_week],
+        )
+
+        promotions.append(bool(draw < promo_prob))
+
+    return {
+        USER_ID_KEY: generated_users[USER_ID_KEY].copy(),
+        PROMO_KEY: promotions,
+    }
 
 
 def assign_randomized_arms(
