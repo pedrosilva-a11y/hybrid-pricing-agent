@@ -1,7 +1,6 @@
 """Synthetic pricing data generation."""
 
 import math
-import random
 from typing import Final, TypedDict
 
 import numpy as np
@@ -21,6 +20,7 @@ from pricing_agent.data.config import (
     PROMO_DEMAND_SENSITIVITY,
     PROMO_DEPTHS,
     PROMO_SHOCK_SENSITIVITY,
+    RANDOMIZED_PRICE_MULTIPLIERS,
     REFERENCE_PRICE_BY_TIER,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
@@ -60,7 +60,6 @@ PROMO_KEY: Final = "promo"
 PROMO_DEPTH_KEY: Final = "promo_depth"
 
 # Assign User Prices Global Variables
-EXPERIMENTAL_PRICE_MULTIPLIERS: Final = (0.90, 0.95, 1.00, 1.05, 1.10)
 IS_RANDOMIZED_KEY: Final = "is_randomized"
 OBSERVED_PRICE_KEY: Final = "observed_price"
 
@@ -565,7 +564,12 @@ def assign_user_prices(
         Column-oriented user pricing data containing each user's observed price and
         whether the price was assigned through randomization.
     """
-    rng = random.Random(derive_seed(config.seed, PRICE_ASSIGNMENT_STREAM))
+    rng = np.random.default_rng(derive_seed(config.seed, PRICE_ASSIGNMENT_STREAM))
+
+    randomized_multipliers = rng.choice(
+        RANDOMIZED_PRICE_MULTIPLIERS,
+        size=len(generated_users[USER_ID_KEY]),
+    )
 
     price_by_week_and_tier = {
         (week, tier): price
@@ -584,8 +588,8 @@ def assign_user_prices(
         tier = generated_users[TIER_KEY][index]
 
         if randomized:
-            price_multiplier = rng.choice(EXPERIMENTAL_PRICE_MULTIPLIERS)
-            observed_price = round(REFERENCE_PRICE_BY_TIER[tier] * price_multiplier, 2)
+            price_multiplier = float(randomized_multipliers[index])
+            observed_price = REFERENCE_PRICE_BY_TIER[tier] * price_multiplier
         else:
             base_price = price_by_week_and_tier[(signup_week, tier)]
             promo_depth = promo_depths[PROMO_DEPTH_KEY][index]

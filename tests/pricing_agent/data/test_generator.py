@@ -11,6 +11,7 @@ from pricing_agent.data.config import (
     DEMAND_LOW_BOUND,
     DEMAND_MEAN,
     PROMO_DEPTHS,
+    RANDOMIZED_PRICE_MULTIPLIERS,
     REFERENCE_PRICE_BY_TIER,
     SUBSCRIPTION_TIERS,
     PricingDataConfig,
@@ -660,6 +661,103 @@ def test_assign_expected_number_of_randomized_user_prices(
     assert sum(assigned_prices[IS_RANDOMIZED_KEY]) == expected_randomized_users
     assert len(assigned_prices[OBSERVED_PRICE_KEY]) == config.n_users
     assert len(assigned_prices[IS_RANDOMIZED_KEY]) == config.n_users
+
+
+def test_assign_allowed_multiplier_to_randomized_users(
+    config: PricingDataConfig,
+) -> None:
+    """Assign randomized prices using only configured price multipliers."""
+    users_info = generate_users(config)
+    weekly_conditions = generate_weekly_conditions(config)
+    weekly_base_prices = generate_weekly_base_prices(
+        weekly_conditions=weekly_conditions,
+    )
+
+    randomized_arms = assign_randomized_arms(
+        config=config,
+        generated_users=users_info,
+    )
+
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
+
+    assigned_prices = assign_user_prices(
+        config=config,
+        generated_users=users_info,
+        weekly_base_prices=weekly_base_prices,
+        randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
+    )
+
+    for index, randomized in enumerate(randomized_arms[IS_RANDOMIZED_KEY]):
+        if not randomized:
+            continue
+
+        tier = users_info[TIER_KEY][index]
+        reference_price = REFERENCE_PRICE_BY_TIER[tier]
+        observed_price = assigned_prices[OBSERVED_PRICE_KEY][index]
+
+        multiplier = observed_price / reference_price
+
+        assert any(
+            multiplier == pytest.approx(candidate)
+            for candidate in RANDOMIZED_PRICE_MULTIPLIERS
+        )
+
+
+def test_assign_expected_randomized_prices_for_frozen_seed(
+    config: PricingDataConfig,
+) -> None:
+    """Assign the expected randomized prices for the frozen random seed."""
+    users_info = generate_users(config)
+    weekly_conditions = generate_weekly_conditions(config)
+    weekly_base_prices = generate_weekly_base_prices(weekly_conditions)
+
+    randomized_arms = assign_randomized_arms(
+        config=config,
+        generated_users=users_info,
+    )
+
+    promo_assignments = assign_promotions(
+        config=config,
+        generated_users=users_info,
+        weekly_conditions=weekly_conditions,
+        randomized_arms=randomized_arms,
+    )
+
+    promo_depths = assign_promo_depths(
+        config=config,
+        promo_assignments=promo_assignments,
+    )
+
+    assigned_prices = assign_user_prices(
+        config=config,
+        generated_users=users_info,
+        weekly_base_prices=weekly_base_prices,
+        randomized_arms=randomized_arms,
+        promo_depths=promo_depths,
+    )
+
+    randomized_prices = [
+        price
+        for price, randomized in zip(
+            assigned_prices[OBSERVED_PRICE_KEY],
+            randomized_arms[IS_RANDOMIZED_KEY],
+            strict=True,
+        )
+        if randomized
+    ]
+
+    assert randomized_prices == pytest.approx([16.9915])
 
 
 def test_reproduce_identical_user_price_assignments_with_same_seed(
